@@ -720,35 +720,54 @@ def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=10.0):
     # Capital por posición (fijo en % del capital inicial)
     pos_capital = initial_capital * position_size_pct / 100.0
 
-    # Construir matriz de P&L diario: para cada trade, cuánto gana/pierde cada día
-    # Usamos retorno lineal simple asumiendo movimiento uniforme entre entrada y salida
-    daily_pnl = np.zeros(n_days)
+    # ── P&L reconocido en fecha de SALIDA (no distribuido) ──────────
+    # Razón: no conoces el resultado hasta cerrar la posición.
+    # La distribución lineal creaba artefactos visuales (subidas/caídas
+    # artificiales) porque trades largos con gran P&L se "esparcían"
+    # de forma incorrecta sobre días anteriores a la salida real.
+    #
+    # Para reflejar posiciones ABIERTAS correctamente, calculamos el
+    # valor mark-to-market de cada posición abierta cada día usando
+    # interpolación del P&L entre entrada y salida — pero solo para
+    # el gráfico visual. El P&L REAL se confirma en la fecha de salida.
+    #
+    # Método: equity diaria = capital_base + sum(MTM de posiciones abiertas)
+    # MTM de cada posición = pos_capital × (pnl_pct × fracción_transcurrida)
 
+    # Primero construir índice entrada→salida por trade
+    open_trades = []  # lista de (ei, xi, pnl_pct)
     for t in trades_s:
-        entry_d = t['entry_date']
-        exit_d  = t['exit_date']
-        pnl_pct = t['pnl'] / 100.0  # retorno total del trade
-
-        ei = date_idx.get(entry_d)
-        xi = date_idx.get(exit_d)
-
-        if ei is None or xi is None or xi <= ei:
-            # Trade en un solo día — P&L en el día de salida
-            if xi is not None:
-                daily_pnl[xi] += pos_capital * pnl_pct
+        ei = date_idx.get(t['entry_date'])
+        xi = date_idx.get(t['exit_date'])
+        if ei is None:
             continue
+        if xi is None:
+            xi = n_days - 1
+        xi = min(xi, n_days - 1)
+        pnl_pct = t['pnl'] / 100.0
+        open_trades.append((ei, xi, pnl_pct))
 
-        # Distribuir P&L uniformemente entre entrada y salida
-        # (simplificación honesta — no tenemos precio intradiario)
-        n_trade_days = xi - ei
-        daily_rate   = pnl_pct / n_trade_days
-        for d in range(ei, xi + 1):
-            if d < n_days:
-                daily_pnl[d] += pos_capital * daily_rate
+    # Calcular equity día a día con MTM de posiciones abiertas
+    # P&L se reconoce progresivamente (fracción del tiempo transcurrido)
+    # Esto es más realista que distribuir uniformemente O reconocer solo al cierre
+    equity = np.full(n_days, initial_capital)
+    for d in range(1, n_days):
+        mtm_total = 0.0
+        for (ei, xi, pnl_pct) in open_trades:
+            if ei >= d:
+                continue   # trade no abierto aún
+            if xi < d - 1:
+                # Trade ya cerrado — su P&L ya está incorporado permanentemente
+                mtm_total += pos_capital * pnl_pct
+            else:
+                # Trade abierto — MTM proporcional al tiempo transcurrido
+                # (aproximación: el precio se mueve linealmente hacia el cierre)
+                frac = (d - ei) / max(xi - ei, 1)
+                frac = min(frac, 1.0)
+                mtm_total += pos_capital * pnl_pct * frac
+        equity[d] = initial_capital + mtm_total
 
-    # Equity acumulada
-    equity = initial_capital + np.cumsum(daily_pnl)
-    equity = np.maximum(equity, 1.0)  # nunca negativo
+    equity = np.maximum(equity, 1.0)
 
     # Normalizar a base 100
     equity_idx = equity / initial_capital * 100
@@ -1228,19 +1247,22 @@ if(is_&&oos){
 const port = D.portfolio_oos;
 if(port && port.equity_curve && port.equity_curve.length > 1){
 
-  // Construir curva SPY normalizada a base 100 en el mismo período
   const portDates = port.daily_dates || [];
+  const nDays = port.equity_curve.length;
+
+  // SPY real: interpolar su serie diaria al calendario del portfolio
   let spyCurve = [];
-  if(D.benchmark && D.benchmark.equity_curve && D.benchmark.equity_curve.length > 1){
-    // Benchmark ya viene alineado con trade_dates (puntos), no con días
-    // Para el portfolio necesitamos interpolarlo a días
-    // Usamos el total_pct del benchmark para normalizar
-    const spyTotal = D.benchmark.total_pct;
-    const nDays = port.equity_curve.length;
-    // Crecimiento lineal del SPY como aproximación para la curva diaria
-    spyCurve = Array.from({length: nDays}, (_,i) => 100 * (1 + (spyTotal/100) * i/(nDays-1)));
+  if(D.benchmark && D.benchmark.equity_curve && D.benchmark.daily_dates){
+    const spyDateMap = {};
+    D.benchmark.daily_dates.forEach((d,i) => spyDateMap[d] = D.benchmark.equity_curve[i]);
+    // Para cada día del portfolio, buscar el valor SPY más cercano
+    let lastSpy = 100;
+    spyCurve = portDates.map(d => {
+      if(spyDateMap[d] != null) { lastSpy = spyDateMap[d]; }
+      return lastSpy;
+    });
   }
-  const hasSpy = spyCurve.length > 0;
+  const hasSpy = spyCurve.length === nDays;
 
   const sysTotal = port.total_pct;
   const spyTotal2 = D.benchmark?.total_pct ?? null;
@@ -1639,39 +1661,33 @@ def main():
         months = max((last - first).days / 30, 1)
         sigs_per_month = round(len(all_oos_trades) / months, 1)
 
-    # Benchmark SPY — con equity curve alineada a las fechas de trades OOS
+    # Benchmark SPY — serie diaria real, mismo rango que el portfolio OOS
     benchmark = None
     try:
-        spy = yf.download("SPY", start=oos_dates[0], end=oos_dates[-1],
-                          auto_adjust=True, progress=False)
-        if isinstance(spy.columns, pd.MultiIndex):
-            spy.columns = spy.columns.get_level_values(0)
-        if len(spy) >= 2:
-            spy_c = spy['Close'].squeeze()
+        port_start = oos_dates[0] if oos_dates else None
+        port_end   = max(t['exit_date'] for t in all_oos_trades) if all_oos_trades else None
+        if port_start and port_end:
+            spy = yf.download("SPY", start=port_start, end=port_end,
+                              auto_adjust=True, progress=False)
+            if isinstance(spy.columns, pd.MultiIndex):
+                spy.columns = spy.columns.get_level_values(0)
+            if len(spy) >= 2:
+                spy_c    = spy['Close'].squeeze()
+                spy_mult = np.cumprod(1 + spy_c.pct_change().fillna(0).values)
+                spy_ret  = float((spy_mult[-1] - 1) * 100)
+                spy_run  = np.maximum.accumulate(spy_mult)
+                spy_dd   = float(((spy_mult / spy_run) - 1).min() * 100)
 
-            # P&L total y MaxDD sobre equity compuesta
-            spy_mult  = np.cumprod(1 + spy_c.pct_change().dropna().values / 100)
-            spy_ret   = float((spy_mult[-1] - 1) * 100)
-            spy_run   = np.maximum.accumulate(spy_mult)
-            spy_dd    = float(((spy_mult / spy_run) - 1).min() * 100)
+                # Serie diaria base-100 para el gráfico
+                spy_dates  = [d.strftime('%Y-%m-%d') for d in spy_c.index]
+                spy_equity = [round(float(v * 100), 2) for v in spy_mult]
 
-            # Equity curve alineada a las fechas de trades OOS
-            # Para cada trade tomamos el % acumulado del SPY en esa fecha
-            spy_idx = pd.DatetimeIndex(spy_c.index)
-            aligned = []
-            for d in oos_dates:
-                try:
-                    loc = spy_idx.searchsorted(pd.Timestamp(d))
-                    loc = min(loc, len(spy_mult) - 1)
-                    aligned.append(round(float((spy_mult[loc] - 1) * 100), 2))
-                except Exception:
-                    aligned.append(aligned[-1] if aligned else 0.0)
-
-            benchmark = {
-                'total_pct':   round(spy_ret, 1),
-                'max_dd':      round(spy_dd, 1),
-                'equity_curve': aligned,  # alineada con trade_dates OOS
-            }
+                benchmark = {
+                    'total_pct':   round(spy_ret, 1),
+                    'max_dd':      round(spy_dd, 1),
+                    'daily_dates': spy_dates,
+                    'equity_curve': spy_equity,  # base-100 serie diaria real
+                }
     except Exception:
         pass
 
