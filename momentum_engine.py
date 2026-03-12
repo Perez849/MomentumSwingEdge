@@ -228,7 +228,7 @@ BREAKOUT_VOL_PERCENTILE = 70
 TP_R_MULTIPLE       = 5.0   # TP muy amplio — el trailing gestiona la salida
 SL_BUFFER_PCT       = 0.5   # buffer en el SL estructural
 MAX_HOLD_DAYS       = 60    # límite de seguridad extremo
-BREAKEVEN_AT_R      = 0.5   # break-even cuando HIGH supera 0.5R
+BREAKEVEN_AT_R      = 1.0   # break-even cuando HIGH supera 1.0R (espacio suficiente)
 TRAIL_ATR_1_R       = 1.0   # activar trailing ATR cuando HIGH supera 1R
 TRAIL_ATR_2_R       = 2.0   # apretar trailing cuando HIGH supera 2R
 TRAIL_ATR_3_R       = 3.0   # apretar más cuando HIGH supera 3R
@@ -1608,19 +1608,20 @@ def main():
             df_is  = df
             df_oos = df.iloc[int(len(df)*0.65):]
 
-        # BUG FIX: calcular indicadores sobre el histórico COMPLETO
-        # y luego filtrar trades por período IS/OOS.
-        # Así los percentiles de volatilidad en el OOS usan toda
-        # la historia disponible — no solo los años del OOS.
-        # Esto es más honesto: en Jan 2020 tenías historia de 20+ años.
-        ind_full = compute_indicators(df)
+        # Calcular indicadores con toda la historia disponible hasta cada período
+        # OOS: usar df completo para que los percentiles en 2020+ incluyan
+        # la historia previa — así en Jan 2020 tienes 20+ años de historia
+        # IS: usar solo df_is para evitar look-ahead del futuro en el IS
+        ind_is   = compute_indicators(df_is)
+        ind_full = compute_indicators(df)   # para el OOS: historia completa
 
-        trades_full = backtest(ticker, ind_full)
+        trades_is  = backtest(ticker, ind_is)
 
-        # Split de trades por fecha (no de indicadores)
+        # Para OOS: backtest sobre el df completo pero solo conservar
+        # trades cuya entrada cae en el período OOS
         oos_start_str = OOS_START.strftime('%Y-%m-%d')
-        trades_is  = [t for t in trades_full if t['entry_date'] <  oos_start_str]
-        trades_oos = [t for t in trades_full if t['entry_date'] >= oos_start_str]
+        trades_full   = backtest(ticker, ind_full)
+        trades_oos    = [t for t in trades_full if t['entry_date'] >= oos_start_str]
 
         # Tag
         for t in trades_is:  t['period'] = 'IS'
