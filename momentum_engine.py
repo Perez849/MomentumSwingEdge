@@ -460,7 +460,7 @@ def check_breakout(ind, i):
         'prev_high':     round(prev_high, 4),
         'price':         round(close, 4),
         'vol_rank':      round(vr, 1),
-        'breakout_pct':  round((price / prev_high - 1) * 100, 2) if prev_high > 0 else 0,
+        'breakout_pct':  round((close / prev_high - 1) * 100, 2) if prev_high > 0 else 0,
     }
 
 
