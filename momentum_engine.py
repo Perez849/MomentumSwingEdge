@@ -175,12 +175,107 @@ UNIVERSE = {
     "NEM":      "Newmont Corporation (Oro)",
     "AEM":      "Agnico Eagle Mines",
     "PAAS":     "Pan American Silver",
+
+    # ══════════════════════════════════════════════════════════════════
+    # ACTIVOS UCITS — disponibles para inversores minoristas en España
+    # Todos cotizan en Xetra (DE) o Euronext (PA/AM) con KIID europeo.
+    # Los ETFs americanos (TQQQ, SH, GLD, IBIT...) NO son accesibles
+    # para minoristas bajo MiFID II — estos son sus equivalentes exactos.
+    # ══════════════════════════════════════════════════════════════════
+
+    # ── ORO Y PLATA FÍSICOS (ETCs, no ETFs — UCITS eligible) ─────────
+    # VZLD = WisdomTree Physical Gold (Xetra). Respaldado por oro físico.
+    # PHAG = WisdomTree Physical Silver (Xetra). Plata física.
+    # En crashes: oro +25% en 2020, +13% en 2022. Baja volatilidad relativa
+    # al S&P en pánico → el filtro de pánico NO los bloquea.
+    "VZLD.DE":  "WisdomTree Physical Gold ETC (Xetra)",
+    "PHAG.DE":  "WisdomTree Physical Silver ETC (Xetra)",
+
+    # ── MINEROS DE ORO UCITS ─────────────────────────────────────────
+    # IS0E.DE ya estaba (iShares Gold Producers). Añadir junior miners.
+    # Los junior miners tienen más beta al oro — más momentum cuando arranca.
+    "GDXJ.DE":  "VanEck Junior Gold Miners UCITS ETF (Xetra)",
+
+    # ── BONOS TESORO USA LARGO PLAZO ─────────────────────────────────
+    # IDTL = iShares USD Treasury Bond 20Y+ UCITS (Xetra). Equivale a TLT.
+    # Sube cuando la Fed baja tipos o en flight-to-safety. 2019: +20%, 2020: +18%.
+    # IBTA = iShares USD Treasury Bond 7-10Y UCITS. Equivale a IEF.
+    "IDTL.DE":  "iShares USD Treasury Bond 20Y+ UCITS ETF (Xetra)",
+    "IBTA.DE":  "iShares USD Treasury Bond 7-10Y UCITS ETF (Xetra)",
+
+    # ── VOLATILIDAD — EXPLOTA EN CRASH (UCITS) ───────────────────────
+    # VIXL = WisdomTree S&P500 VIX Short-Term Futures 2.25x (Xetra).
+    # Es el equivalente europeo de UVXY. En COVID (2020): +3500%.
+    # En crash 2022: +150%. UCITS eligible, cotiza en Xetra.
+    # SL máximo ajustado al 8% (HIGH_VOL_ASSETS) — puede caer 30% en un día
+    # cuando el VIX colapsa. Solo opera cuando hay tendencia alcista del VIX.
+    "VIXL.DE":  "WisdomTree VIX Futures 2.25x UCITS (Xetra)",
+
+    # ── INVERSOS UCITS — OPERAR CAÍDAS ───────────────────────────────
+    # Cuando el mercado cae, estos suben. El sistema detecta compresión
+    # y breakout alcista en el inverso = mercado rompiendo a la baja.
+    # DXS3 = Xtrackers SP500 Inverse 1x (Xetra). Equivale a SH.
+    # DBPK = Xtrackers SP500 2x Inverse (Xetra). Equivale a SDS. Ya en universo.
+    # 3QQS = WisdomTree Nasdaq 3x Daily Short (Xetra). Equivale a SQQQ.
+    "DXS3.DE":  "Xtrackers S&P500 Inverse Daily Swap UCITS (Xetra)",
+    "3QQS.DE":  "WisdomTree Nasdaq 100 3x Daily Short UCITS (Xetra)",
+
+    # ── APALANCADOS ALCISTAS UCITS ───────────────────────────────────
+    # 3QQQ = WisdomTree Nasdaq 100 3x Daily Leveraged (Xetra). Equivale a TQQQ.
+    # 3USL = WisdomTree S&P500 3x Daily Leveraged (Xetra). Equivale a UPRO.
+    # 3SEM = WisdomTree Semiconductor 3x (Xetra). Equivale a SOXL.
+    # Solo entran con tendencia + compresión — el sistema filtra el ruido.
+    # El trailing % del pico es crítico aquí para no devolver ganancias.
+    "3QQQ.DE":  "WisdomTree Nasdaq 100 3x Daily Leveraged UCITS (Xetra)",
+    "3USL.DE":  "WisdomTree S&P500 3x Daily Leveraged UCITS (Xetra)",
+    "3SEM.DE":  "WisdomTree Semiconductor 3x Daily Leveraged UCITS (Xetra)",
+
+    # ── MATERIAS PRIMAS UCITS ────────────────────────────────────────
+    # WTIC = WisdomTree Enhanced Commodity UCITS (Xetra). Equivale a DBC.
+    # Ciclos de inflación muy claros. 2021-2022: +40%. Descorrelacionado.
+    # AIGE = WisdomTree Agriculture UCITS (Xetra). Granos en inflación.
+    "WTIC.DE":  "WisdomTree Enhanced Commodity UCITS ETF (Xetra)",
+    "AIGE.DE":  "WisdomTree Agriculture UCITS ETF (Xetra)",
+
+    # ── BITCOIN UCITS (ETP, no ETF — no hay UCITS Bitcoin por ley) ───
+    # IB1T = iShares Bitcoin ETP (Xetra). Lanzado por BlackRock en 2025.
+    # Físicamente respaldado. Equivalente funcional a IBIT para minoristas EU.
+    # Ciclos de 18 meses muy marcados. TER 0.15-0.25%.
+    "IB1T.DE":  "iShares Bitcoin ETP (Xetra) — BlackRock",
+
+    # ── MERCADOS INTERNACIONALES UCITS ──────────────────────────────
+    # China internet: KWBE = KraneShares CSI China Internet UCITS (LSE/Xetra).
+    # Equivale exactamente a KWEB americano. Ciclos de 2-3 años muy marcados.
+    # India: NDIA = iShares MSCI India UCITS (Xetra). Tendencia 2023-2024 brutal.
+    # Brasil: IBZL = iShares MSCI Brazil UCITS (Xetra). Ciclos commodities.
+    # EM ex-China: EMXC ya en universo. Japón: WTIF.DE ya en universo.
+    "KWBE.DE":  "KraneShares CSI China Internet UCITS ETF (Xetra)",
+    "NDIA.DE":  "iShares MSCI India UCITS ETF (Xetra)",
+    "IBZL.DE":  "iShares MSCI Brazil UCITS ETF (Xetra)",
+    "CNYA.DE":  "iShares MSCI China A UCITS ETF (Xetra)",
+
+    # ── REITs USA UCITS ──────────────────────────────────────────────
+    # IUSR = iShares US Property Yield UCITS (Xetra). Equivale a VNQ.
+    # Explota cuando bajan tipos. 2019: +25%, rebote 2023: +20%.
+    "IUSR.DE":  "iShares US Property Yield UCITS ETF (Xetra)",
+
+    # ── CONSUMO DEFENSIVO Y UTILITIES UCITS ─────────────────────────
+    # XLP y XLU americanos → equivalentes UCITS en Xetra.
+    # Descorrelacionados en caídas, baja volatilidad relativa.
+    "ZPRS.DE":  "SPDR S&P US Consumer Staples UCITS ETF (Xetra)",
+    "ZPDV.DE":  "SPDR S&P US Utilities UCITS ETF (Xetra)",
 }
 
 # Activos con historial corto (<5 años) — el sistema los filtrará
 # automáticamente si no tienen suficientes datos para el percentil.
 # Los dejamos en el universo para cuando tengan historia suficiente.
-SHORT_HISTORY = {"ASTS", "EVGO", "OSCR", "NIO", "COIN", "ABNB", "SNOW"}
+SHORT_HISTORY = {"ASTS", "EVGO", "OSCR", "NIO", "COIN", "ABNB", "SNOW",
+                  "IB1T.DE", "AIGE.DE", "CNYA.DE", "GDXJ.DE"}
+
+# Activos de volatilidad extrema — SL máximo ajustado al 8% (no 15%)
+# VIXL puede caer 30%+ en un día cuando el VIX colapsa.
+# 3QQQ/3USL/3SEM/3QQS tienen decaimiento temporal y gaps enormes.
+HIGH_VOL_ASSETS = {"VIXL.DE", "3QQQ.DE", "3USL.DE", "3SEM.DE", "3QQS.DE", "DBPK.DE", "DXS3.DE"}
 
 # ════════════════════════════════════════════════════════════════════
 # PARÁMETROS — mínimos, con lógica económica clara
@@ -225,18 +320,23 @@ BREAKOUT_VOL_PERCENTILE = 70
 # 2. A 1.0R de HIGH: trailing peak - 2.0×ATR (espacio para respirar)  
 # 3. A 2.0R de HIGH: trailing peak - 1.5×ATR (más ajustado)
 # 4. A 3.0R de HIGH: trailing peak - 1.0×ATR (proteger ganancias grandes)
-TP_R_MULTIPLE       = 5.0   # TP muy amplio — el trailing gestiona la salida
+TP_R_MULTIPLE       = 5.0   # TP amplio — trailing gestiona la salida real
 SL_BUFFER_PCT       = 0.5   # buffer en el SL estructural
-MAX_HOLD_DAYS       = 60    # límite de seguridad extremo
-BREAKEVEN_AT_R      = 1.0   # break-even cuando HIGH supera 1.0R (espacio suficiente)
-TRAIL_ATR_1_R       = 1.0   # activar trailing ATR cuando HIGH supera 1R
-TRAIL_ATR_2_R       = 2.0   # apretar trailing cuando HIGH supera 2R
-TRAIL_ATR_3_R       = 3.0   # apretar más cuando HIGH supera 3R
-TRAIL_ATR_MULT_1    = 2.0   # peak - 2.0×ATR en fase 1
-TRAIL_ATR_MULT_2    = 1.5   # peak - 1.5×ATR en fase 2
-TRAIL_ATR_MULT_3    = 1.0   # peak - 1.0×ATR en fase 3
-MOMENTUM_EXIT_DAYS  = 5     # mínimo días para salida por momentum
-# NOTA: salida momentum eliminada — el ATR trailing la reemplaza
+MAX_HOLD_DAYS       = 60    # límite de seguridad
+BREAKEVEN_AT_R      = 1.0   # break-even cuando HIGH supera 1R
+
+# Trailing como % del pico (más robusto que múltiplos de ATR absolutos)
+# SL = peak × (1 - TRAIL_PCT_X) — se actualiza con cada nuevo HIGH
+# Lógica: si el pico es $116 y usamos 4%, el SL queda en $111.4
+# Esto es consistente independientemente del precio absoluto del activo
+
+TRAIL_ACT_1_R       = 1.0   # activar fase 1 cuando HIGH alcanza 1R
+TRAIL_ACT_2_R       = 2.0   # activar fase 2 cuando HIGH alcanza 2R  
+TRAIL_ACT_3_R       = 3.0   # activar fase 3 cuando HIGH alcanza 3R
+
+TRAIL_PCT_1         = 0.06  # fase 1: SL = peak × (1 - 6%) — espacio amplio
+TRAIL_PCT_2         = 0.04  # fase 2: SL = peak × (1 - 4%) — más ajustado
+TRAIL_PCT_3         = 0.025 # fase 3: SL = peak × (1 - 2.5%) — proteger ganancias
 
 # Costes (backtest)
 COMMISSION_PCT = 0.10
@@ -464,7 +564,7 @@ def check_breakout(ind, i):
     }
 
 
-def compute_levels(ind, i, comp_detail):
+def compute_levels(ind, i, comp_detail, ticker=""):
     """
     Calcula SL y TP para la entrada en la barra i.
     SL = mínimo de la compresión - buffer
@@ -474,7 +574,9 @@ def compute_levels(ind, i, comp_detail):
     comp_low = comp_detail.get('comp_low', entry * 0.95)
 
     sl  = comp_low * (1 - SL_BUFFER_PCT / 100)
-    sl  = max(sl, entry * 0.85)   # SL máximo del 15% para no ser absurdo
+    # SL máximo: 8% para activos de alta volatilidad, 15% para el resto
+    max_sl_pct = 0.08 if ticker in HIGH_VOL_ASSETS else 0.15
+    sl  = max(sl, entry * (1 - max_sl_pct))
     risk = entry - sl
 
     if risk <= 0:
@@ -534,25 +636,27 @@ def backtest(ticker, ind):
             if pnl_r_today >= BREAKEVEN_AT_R and sl < entry_price:
                 sl = max(sl, entry_price * 1.001)
 
-            # ── TRAILING ATR — evaluado sobre el PICO histórico ─────
-            # SL = peak_high - N×ATR
-            # El ATR es el rango real del activo — más robusto que %EMA.
-            # Se actualiza cada día usando el HIGH más alto alcanzado.
-            # Así capturamos picos intradía que el CLOSE nunca ve.
+            # ── TRAILING % DEL PICO — tres fases progresivas ────────
+            # SL = peak × (1 - TRAIL_PCT)
+            # Se actualiza cada barra usando el HIGH más alto alcanzado.
+            # Expresado como % del pico: consistente en todos los activos
+            # independientemente de su precio absoluto o ATR.
+            #
+            # Ejemplo con pico $116 (entrada $100, riesgo $8):
+            # Fase 1 (1R): SL = $116 × 0.94 = $109.0 → +9% desde entrada
+            # Fase 2 (2R): SL = $116 × 0.96 = $111.4 → +11.4% desde entrada
+            # Fase 3 (3R): SL = $116 × 0.975 = $113.1 → +13.1% desde entrada
 
-            if pnl_r_peak >= TRAIL_ATR_1_R:
-                # Fase 1: espacio amplio (2×ATR desde el pico)
-                trail = peak - TRAIL_ATR_MULT_1 * atr_today
+            if pnl_r_peak >= TRAIL_ACT_1_R:
+                trail = peak * (1 - TRAIL_PCT_1)
                 sl = max(sl, trail)
 
-            if pnl_r_peak >= TRAIL_ATR_2_R:
-                # Fase 2: más ajustado (1.5×ATR desde el pico)
-                trail = peak - TRAIL_ATR_MULT_2 * atr_today
+            if pnl_r_peak >= TRAIL_ACT_2_R:
+                trail = peak * (1 - TRAIL_PCT_2)
                 sl = max(sl, trail)
 
-            if pnl_r_peak >= TRAIL_ATR_3_R:
-                # Fase 3: muy ajustado (1×ATR desde el pico)
-                trail = peak - TRAIL_ATR_MULT_3 * atr_today
+            if pnl_r_peak >= TRAIL_ACT_3_R:
+                trail = peak * (1 - TRAIL_PCT_3)
                 sl = max(sl, trail)
 
             # ── EVALUAR SALIDA ───────────────────────────────────────
@@ -618,7 +722,7 @@ def backtest(ticker, ind):
             continue
 
         # Las tres condiciones pasan — calcular niveles
-        entry_p, sl_p, tp_p, rr = compute_levels(ind, i, comp_d)
+        entry_p, sl_p, tp_p, rr = compute_levels(ind, i, comp_d, ticker)
         if entry_p is None or rr < 1.5:  # R/R mínimo 1.5
             continue
 
@@ -676,6 +780,17 @@ def compute_metrics(trades):
         else:
             cur = 0
 
+    # Efficiency ratio: P&L salida / Pico P&L
+    # Mide qué fracción del movimiento máximo capturaste realmente
+    # Si el trade llegó a +16% de pico pero saliste en +5%, efficiency=31%
+    efficiencies = []
+    for t in trades:
+        peak_p = t.get('peak_pnl', 0)
+        pnl_p  = t.get('pnl', 0)
+        if peak_p > 0.5:  # solo trades con pico significativo
+            efficiencies.append(pnl_p / peak_p * 100)
+    avg_efficiency = round(float(np.mean(efficiencies)), 1) if efficiencies else 0
+
     return {
         'n':               n,
         'wr':              round(wr, 1),
@@ -686,6 +801,7 @@ def compute_metrics(trades):
         'expectancy':      round(expectancy, 3),
         'avg_days':        round(avg_days, 1),
         'max_loss_streak': max_streak,
+        'avg_efficiency':  avg_efficiency,  # % del pico capturado
         'by_reason':       by_reason,
         'pnls':            [round(float(p), 3) for p in pnls],
         'trade_dates':     [t['entry_date'] for t in trades],
@@ -849,7 +965,7 @@ def get_today_signal(ticker, ind):
     signal_type = None
 
     if not panic and trend_ok and comp_ok and bo_ok:
-        entry_p, sl_p, tp_p, rr = compute_levels(ind, i, comp_d)
+        entry_p, sl_p, tp_p, rr = compute_levels(ind, i, comp_d, ticker)
         if entry_p and rr >= 1.5:
             signal_type = 'FIRE'
         else:
@@ -1222,6 +1338,7 @@ if(is_&&oos){
     ['Sharpe','sharpe',''],['Avg ganancia','avg_win','%'],['Avg pérdida','avg_loss','%'],
     ['P&L total','total_pct','%'],['Max Drawdown','max_dd','%'],
     ['Expectativa','expectancy','%'],['Días medio','avg_days','d'],
+    ['Eficiencia pico','avg_efficiency','%'],
     ['Racha pérdidas','max_loss_streak',''],
   ];
   const verdict=oos.wr>=55&&oos.pf>=1.3&&oos.sharpe>=0.5?
@@ -1253,7 +1370,37 @@ if(is_&&oos){
           return`<div class="bt-row"><span class="bt-lbl">${l}</span><span class="bt-val" style="color:${col}">${vo!=null?vo+u:'—'}</span></div>`;
         }).join('')}
       </div>
-    </div>`;
+    </div>
+
+    ${(()=>{
+      const br = oos.by_reason||{};
+      const total = Object.values(br).reduce((a,b)=>a+b,0)||1;
+      const items = [
+        {k:'TP', label:'TP', c:'#06d6a0'},
+        {k:'SL', label:'SL', c:'#ff4d6d'},
+        {k:'M',  label:'M⚡', c:'#ffd60a'},
+        {k:'T',  label:'Tiempo', c:'#4cc9f0'},
+      ];
+      const bars = items.map(({k,label,c})=>{
+        const n = br[k]||0, pct = (n/total*100).toFixed(0);
+        return `<div style="flex:1;min-width:80px">
+          <div style="font-family:var(--mono);font-size:.58rem;color:${c};margin-bottom:.3rem">${label} · ${n}</div>
+          <div style="background:rgba(255,255,255,.04);border-radius:4px;overflow:hidden;height:6px">
+            <div style="width:${pct}%;background:${c};height:100%;border-radius:4px"></div>
+          </div>
+          <div style="font-family:var(--mono);font-size:.55rem;color:var(--t3);margin-top:.2rem">${pct}%</div>
+        </div>`;
+      }).join('');
+      const eff = oos.avg_efficiency;
+      const effCol = eff>=60?'var(--safe)':eff>=40?'var(--watch)':'var(--fire)';
+      return `<div style="background:var(--s1);border:1px solid rgba(255,255,255,.06);border-radius:var(--r);padding:1rem 1.2rem;margin-top:.8rem">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.8rem;flex-wrap:wrap;gap:.5rem">
+          <span style="font-family:var(--mono);font-size:.6rem;color:var(--t2);letter-spacing:.05em">MOTIVOS DE SALIDA — OOS</span>
+          ${eff!=null?`<span style="font-family:var(--mono);font-size:.6rem;color:var(--t3)">Eficiencia media: <span style="color:${effCol};font-weight:600">${eff}%</span> <span style="color:var(--t3);font-size:.52rem">(% del pico capturado)</span></span>`:''}
+        </div>
+        <div style="display:flex;gap:1rem;flex-wrap:wrap">${bars}</div>
+      </div>`;
+    })()}`;
 }
 
 // ── Equity curve OOS — portfolio diario vs SPY ───────────────────
