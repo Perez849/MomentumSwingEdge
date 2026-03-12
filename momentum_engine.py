@@ -210,32 +210,33 @@ BREAKOUT_VOL_PERCENTILE = 70
 
 # Gestión del trade
 # ──────────────────────────────────────────────────────────────────
-# DIAGNÓSTICO del backtest real:
-# - Salida por tiempo (T) domina y mata trades en +5-15% que podrían
-#   llegar al TP — esto destruye el avg ganancia
-# - SLX: llegó a +9.5% pico, salió en -0.58% — break-even no activó
-#   porque el backtest solo ve cierres, no el pico intradía
+# DIAGNÓSTICO v3 — problema real identificado:
+# El trailing se evalúa sobre CLOSE pero los picos son intradía.
+# COPX: subió +11.6% intradía, cerró bajo 1R → trailing nunca activó
+# LIT:  pico +15.6%, salida +6.44% → EMA trailing demasiado lejos
 #
-# SOLUCIÓN:
-# 1. Eliminar salida por tiempo fija — reemplazar por salida por
-#    MOMENTUM PERDIDO: precio cierra bajo EMA21 = tendencia rota
-# 2. Break-even basado en HIGH del día (no close) para capturar picos
-# 3. TP generoso (4R) — rara vez se alcanza pero define el techo
-# 4. Trailing en tres fases para dejar correr trades fuertes
-TP_R_MULTIPLE       = 4.0   # TP amplio — el trailing gestiona la salida real
+# SOLUCIÓN — trailing basado en ATR y evaluado sobre HIGH intradía:
+# El ATR mide el rango real del activo. Trailing = peak_high - N×ATR
+# Se actualiza cada día con el HIGH del día (no el close).
+# Break-even también se activa con HIGH del día.
+#
+# Tres fases:
+# 1. A 0.5R de HIGH: mover SL a break-even (protección mínima)
+# 2. A 1.0R de HIGH: trailing peak - 2.0×ATR (espacio para respirar)  
+# 3. A 2.0R de HIGH: trailing peak - 1.5×ATR (más ajustado)
+# 4. A 3.0R de HIGH: trailing peak - 1.0×ATR (proteger ganancias grandes)
+TP_R_MULTIPLE       = 5.0   # TP muy amplio — el trailing gestiona la salida
 SL_BUFFER_PCT       = 0.5   # buffer en el SL estructural
-MAX_HOLD_DAYS       = 45    # límite de seguridad solo para trades estancados
-BREAKEVEN_AT_R      = 0.75  # break-even cuando HIGH del día supera 0.75R
-TRAIL_ACT_1         = 1.0   # fase 1: trailing EMA21 a 1R
-TRAIL_ACT_2         = 2.0   # fase 2: trailing EMA13 a 2R (más ajustado)
-TRAIL_ACT_3         = 3.0   # fase 3: trailing EMA8  a 3R (proteger ganancias)
-TRAIL_BUFFER_1      = 0.010 # 1.0% bajo EMA21
-TRAIL_BUFFER_2      = 0.007 # 0.7% bajo EMA13
-TRAIL_BUFFER_3      = 0.005 # 0.5% bajo EMA8
-# Salida por momentum: si precio cierra bajo EMA21 Y llevamos >5 días
-# el momentum está roto — salir aunque no haya tocado el SL
-MOMENTUM_EXIT_DAYS  = 5     # mínimo días antes de aplicar salida momentum
-MOMENTUM_EXIT_EMA   = 21    # usar EMA21 como referencia de momentum
+MAX_HOLD_DAYS       = 60    # límite de seguridad extremo
+BREAKEVEN_AT_R      = 0.5   # break-even cuando HIGH supera 0.5R
+TRAIL_ATR_1_R       = 1.0   # activar trailing ATR cuando HIGH supera 1R
+TRAIL_ATR_2_R       = 2.0   # apretar trailing cuando HIGH supera 2R
+TRAIL_ATR_3_R       = 3.0   # apretar más cuando HIGH supera 3R
+TRAIL_ATR_MULT_1    = 2.0   # peak - 2.0×ATR en fase 1
+TRAIL_ATR_MULT_2    = 1.5   # peak - 1.5×ATR en fase 2
+TRAIL_ATR_MULT_3    = 1.0   # peak - 1.0×ATR en fase 3
+MOMENTUM_EXIT_DAYS  = 5     # mínimo días para salida por momentum
+# NOTA: salida momentum eliminada — el ATR trailing la reemplaza
 
 # Costes (backtest)
 COMMISSION_PCT = 0.10
@@ -436,7 +437,8 @@ def check_breakout(ind, i):
     if i < COMPRESSION_BARS + 252:
         return False, {}
 
-    price   = _v(ind, 'c', i)
+    high    = _v(ind, 'h', i)   # HIGH del día — el breakout ocurre intradía
+    close   = _v(ind, 'c', i)
     vr      = ind['vol_rank'][i]
 
     if np.isnan(vr):
@@ -445,13 +447,18 @@ def check_breakout(ind, i):
     # Máximo de las barras anteriores (sin incluir la barra actual)
     prev_high = float(np.max(ind['h'][i - COMPRESSION_BARS:i]))
 
-    broke_out   = price > prev_high
+    # Breakout: HIGH supera el máximo de compresión
+    # Pero CLOSE debe estar por encima del 50% del rango diario
+    # (filtro de cierre — evita falsas roturas que cierran en el suelo)
+    daily_range = _v(ind, 'h', i) - _v(ind, 'lo', i)
+    close_pct   = (close - _v(ind, 'lo', i)) / daily_range if daily_range > 0 else 0.5
+    broke_out   = high > prev_high and close_pct >= 0.4
     strong_vol  = vr >= BREAKOUT_VOL_PERCENTILE
 
     ok = broke_out and strong_vol
     return ok, {
         'prev_high':     round(prev_high, 4),
-        'price':         round(price, 4),
+        'price':         round(close, 4),
         'vol_rank':      round(vr, 1),
         'breakout_pct':  round((price / prev_high - 1) * 100, 2) if prev_high > 0 else 0,
     }
@@ -474,7 +481,7 @@ def compute_levels(ind, i, comp_detail):
         return None, None, None, None
 
     tp   = entry + risk * TP_R_MULTIPLE
-    tp   = min(tp, entry * 1.20)  # TP máximo del 20%
+    # Sin cap de TP — el ATR trailing gestiona la salida real
     rr   = round((tp - entry) / risk, 2)
 
     sl_pct = round((entry - sl) / entry * 100, 2)
@@ -507,63 +514,68 @@ def backtest(ticker, ind):
 
         # ── Gestión del trade abierto ────────────────────────────────
         if in_trade:
-            high_today = _v(ind, 'h', i)   # máximo intradía — para break-even
-            peak       = max(peak, high_today)
+            high_today = _v(ind, 'h', i)    # HIGH intradía real
+            atr_today  = _v(ind, 'atr14', i)  # ATR del día
+            peak       = max(peak, high_today)  # pico histórico HIGH
             held       = i - entry_i
             risk       = entry_price - sl_initial
-            if risk <= 0:
+            if risk <= 0 or atr_today <= 0:
                 in_trade = False
                 continue
 
-            # R alcanzado usando HIGH del día (más honesto para break-even)
-            pnl_r_high  = (high_today  - entry_price) / risk
-            # R actual usando CLOSE (para trailing y salida momentum)
-            pnl_r_close = (price - entry_price) / risk
+            # R alcanzado usando HIGH (pico intradía real — no el close)
+            pnl_r_peak  = (peak        - entry_price) / risk
+            pnl_r_today = (high_today  - entry_price) / risk
+            pnl_r_close = (price       - entry_price) / risk
 
-            # ── BREAK-EVEN: usar HIGH del día ────────────────────────
-            # Cuando el precio intradía supera 0.75R, mover SL a BE
-            # Usa HIGH para no perderse picos que luego cierran abajo
-            if pnl_r_high >= BREAKEVEN_AT_R and sl < entry_price:
-                sl = max(sl, entry_price * 1.001)  # BE + 0.1%
+            # ── BREAK-EVEN: HIGH supera 0.5R ────────────────────────
+            # En cuanto el HIGH del día supera 0.5R, el SL va a BE.
+            # Esto elimina pérdidas en trades que llegaron a ganar.
+            if pnl_r_today >= BREAKEVEN_AT_R and sl < entry_price:
+                sl = max(sl, entry_price * 1.001)
 
-            # ── TRAILING EN TRES FASES (sobre CLOSE) ────────────────
-            # Fase 1 a 1R: EMA21 con buffer 1% — espacio para respirar
-            if pnl_r_close >= TRAIL_ACT_1:
-                trail = _v(ind, 'ema21', i) * (1 - TRAIL_BUFFER_1)
+            # ── TRAILING ATR — evaluado sobre el PICO histórico ─────
+            # SL = peak_high - N×ATR
+            # El ATR es el rango real del activo — más robusto que %EMA.
+            # Se actualiza cada día usando el HIGH más alto alcanzado.
+            # Así capturamos picos intradía que el CLOSE nunca ve.
+
+            if pnl_r_peak >= TRAIL_ATR_1_R:
+                # Fase 1: espacio amplio (2×ATR desde el pico)
+                trail = peak - TRAIL_ATR_MULT_1 * atr_today
                 sl = max(sl, trail)
 
-            # Fase 2 a 2R: EMA13 con buffer 0.7% — más ajustado
-            if pnl_r_close >= TRAIL_ACT_2:
-                trail = _v(ind, 'ema13', i) * (1 - TRAIL_BUFFER_2)
+            if pnl_r_peak >= TRAIL_ATR_2_R:
+                # Fase 2: más ajustado (1.5×ATR desde el pico)
+                trail = peak - TRAIL_ATR_MULT_2 * atr_today
                 sl = max(sl, trail)
 
-            # Fase 3 a 3R: EMA8 con buffer 0.5% — proteger ganancias grandes
-            if pnl_r_close >= TRAIL_ACT_3:
-                trail = _v(ind, 'ema8', i) * (1 - TRAIL_BUFFER_3)
+            if pnl_r_peak >= TRAIL_ATR_3_R:
+                # Fase 3: muy ajustado (1×ATR desde el pico)
+                trail = peak - TRAIL_ATR_MULT_3 * atr_today
                 sl = max(sl, trail)
 
-            # ── SALIDA POR MOMENTUM PERDIDO ─────────────────────────
-            # Si precio cierra bajo EMA21 Y llevamos más de N días
-            # la tendencia está rota — salir aunque no toque el SL
-            # Esto reemplaza la salida por tiempo fija
-            momentum_broken = (
-                held >= MOMENTUM_EXIT_DAYS and
-                price < _v(ind, 'ema21', i) and
-                pnl_r_close > 0  # solo si estamos en beneficio (no cortar pérdidas aquí)
-            )
-
+            # ── EVALUAR SALIDA ───────────────────────────────────────
+            # Importante: usar LOW del día para SL (el precio bajó hasta ahí)
+            low_today = _v(ind, 'lo', i)
             reason = None
-            if price <= sl:
+            if low_today <= sl:
                 reason = 'SL'
-            elif price >= tp:
+            elif high_today >= tp:
                 reason = 'TP'
-            elif momentum_broken:
-                reason = 'M'   # Momentum perdido
             elif held >= MAX_HOLD_DAYS:
-                reason = 'T'   # Tiempo límite de seguridad
+                reason = 'T'
 
             if reason:
-                exit_price = price * (1 - (COMMISSION_PCT + SLIPPAGE_PCT) / 100)
+                # Precio de salida: si SL → precio del SL (ejecutado en SL)
+                # Si TP → precio del TP. Si T → close del día.
+                if reason == 'SL':
+                    raw_exit = sl  # ejecutado en el nivel del SL
+                elif reason == 'TP':
+                    raw_exit = tp  # ejecutado en el TP
+                else:
+                    raw_exit = price  # close del día
+                exit_price = raw_exit * (1 - (COMMISSION_PCT + SLIPPAGE_PCT) / 100)
                 pnl_net    = (exit_price - entry_price) / entry_price * 100
 
                 r_achieved = round((peak - entry_price) / (entry_price - sl_initial), 2) if (entry_price - sl_initial) > 0 else 0
@@ -615,7 +627,7 @@ def backtest(ticker, ind):
         sl          = sl_p
         sl_initial  = sl_p   # guardar SL original para calcular R
         tp          = tp_p
-        peak        = entry_price
+        peak        = _v(ind, 'h', i)  # HIGH del día de entrada (no close)
         entry_i     = i
         entry_date  = ind['dates'][i]
 
@@ -643,8 +655,10 @@ def compute_metrics(trades):
     pf    = abs(wins.sum() / loss.sum()) if loss.sum() != 0 else (99.0 if len(wins) else 0)
     avg_w = float(wins.mean()) if len(wins) else 0
     avg_l = float(loss.mean()) if len(loss) else 0
-    # Sharpe por trade — útil para comparar IS vs OOS
-    sh    = float(pnls.mean() / pnls.std() * np.sqrt(52)) if pnls.std() > 0 else 0
+    # Sharpe por trade — anualizado asumiendo ~252/avg_hold_days trades/año
+    _avg_hold = float(np.mean([t['days'] for t in trades])) if trades else 25
+    _ann = np.sqrt(max(252 / max(_avg_hold, 1), 1))
+    sh    = float(pnls.mean() / pnls.std() * _ann) if pnls.std() > 0 else 0
     expectancy = avg_w * (wr / 100) + avg_l * (1 - wr / 100)
 
     by_reason = {}
@@ -788,12 +802,11 @@ def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=10.0):
     years = (end - start).days / 365.25
     cagr  = float((equity[-1] / initial_capital) ** (1 / max(years, 0.1)) - 1) * 100 if years > 0 else 0
 
-    # Máx posiciones simultáneas (informativo)
-    max_concurrent = 0
-    for d in range(n_days):
-        date_str = dates[d].strftime('%Y-%m-%d')
-        concurrent = sum(1 for t in trades_s if t['entry_date'] <= date_str <= t['exit_date'])
-        max_concurrent = max(max_concurrent, concurrent)
+    # Máx posiciones simultáneas — usando índices numéricos (eficiente)
+    open_arr = np.zeros(n_days, dtype=int)
+    for (ei, xi, _) in open_trades:
+        open_arr[ei:xi+1] += 1
+    max_concurrent = int(open_arr.max()) if n_days > 0 else 0
 
     return {
         'equity_curve':    [round(float(v), 2) for v in equity_idx],
@@ -1276,7 +1289,7 @@ if(port && port.equity_curve && port.equity_curve.length > 1){
       <div style="width:24px;height:2px;background:#4cc9f0;border-radius:2px;opacity:.7;background:repeating-linear-gradient(90deg,#4cc9f0 0,#4cc9f0 5px,transparent 5px,transparent 9px)"></div>
       <span style="font-family:var(--mono);font-size:.62rem;color:var(--t2)">SPY Buy&Hold (${spyTotal2>=0?'+':''}${spyTotal2}%)</span>
     </div>`:''}
-    <span style="font-family:var(--mono);font-size:.58rem;color:var(--t3);margin-left:auto">base 100 · 10% por posición · máx ${port.max_concurrent||'?'} simultáneas</span>
+    <span style="font-family:var(--mono);font-size:.58rem;color:var(--t3);margin-left:auto">base 100 · 10%/posición · máx ${port.max_concurrent||'?'} simultáneas · CAGR ${(port.cagr>=0?'+':'')+port.cagr}%/año</span>
   </div>`;
 
   $('eq-section').innerHTML=`
@@ -1595,11 +1608,19 @@ def main():
             df_is  = df
             df_oos = df.iloc[int(len(df)*0.65):]
 
-        ind_is  = compute_indicators(df_is)
-        ind_oos = compute_indicators(df_oos)
+        # BUG FIX: calcular indicadores sobre el histórico COMPLETO
+        # y luego filtrar trades por período IS/OOS.
+        # Así los percentiles de volatilidad en el OOS usan toda
+        # la historia disponible — no solo los años del OOS.
+        # Esto es más honesto: en Jan 2020 tenías historia de 20+ años.
+        ind_full = compute_indicators(df)
 
-        trades_is  = backtest(ticker, ind_is)
-        trades_oos = backtest(ticker, ind_oos)
+        trades_full = backtest(ticker, ind_full)
+
+        # Split de trades por fecha (no de indicadores)
+        oos_start_str = OOS_START.strftime('%Y-%m-%d')
+        trades_is  = [t for t in trades_full if t['entry_date'] <  oos_start_str]
+        trades_oos = [t for t in trades_full if t['entry_date'] >= oos_start_str]
 
         # Tag
         for t in trades_is:  t['period'] = 'IS'
