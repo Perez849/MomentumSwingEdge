@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Momentum Breakout Engine</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;700;800&family=Syne+Mono&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#050810;color:#f0f4ff;font-family:'Syne',sans-serif;min-height:100vh;display:grid;place-items:center;overflow:hidden}
+body::before{content:'';position:fixed;inset:0;background:radial-gradient(ellipse 80% 60% at 50% 0%,rgba(76,201,240,.07) 0%,transparent 60%),radial-gradient(ellipse 50% 50% at 80% 80%,rgba(255,77,109,.05) 0%,transparent 50%);pointer-events:none}
+.wrap{text-align:center;position:relative;z-index:1;padding:2rem}
+.mark{width:64px;height:64px;background:linear-gradient(135deg,#ff4d6d,#ff6b35);border-radius:16px;display:grid;place-items:center;font-size:1.6rem;margin:0 auto 2rem;box-shadow:0 0 48px rgba(255,77,109,.35);animation:float 3s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+h1{font-size:clamp(1.4rem,4vw,2.2rem);font-weight:800;letter-spacing:-.03em;margin-bottom:.5rem}
+.sub{font-family:'Syne Mono',monospace;font-size:.7rem;color:#4d6a99;letter-spacing:.12em;text-transform:uppercase;margin-bottom:2.5rem}
+.status{display:inline-flex;align-items:center;gap:.6rem;background:#0c1020;border:1px solid #1e2d50;border-radius:100px;padding:.6rem 1.2rem;margin-bottom:2rem}
+.dot{width:8px;height:8px;background:#ffd60a;border-radius:50%;box-shadow:0 0 10px #ffd60a;animation:pulse 1.5s ease-in-out infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.2}}
+.status-txt{font-family:'Syne Mono',monospace;font-size:.65rem;color:#8fa3c8}
+.steps{display:flex;flex-direction:column;gap:.75rem;max-width:360px;margin:0 auto 2.5rem;text-align:left}
+.step{display:flex;align-items:center;gap:.9rem;background:#080c18;border:1px solid #141d35;border-radius:12px;padding:.8rem 1rem;font-size:.75rem;color:#8fa3c8}
+.step-n{font-family:'Syne Mono',monospace;font-size:.65rem;color:#4d6a99;background:#0c1020;border:1px solid #1e2d50;border-radius:6px;padding:.2rem .45rem;flex-shrink:0}
+.eta{font-family:'Syne Mono',monospace;font-size:.6rem;color:#2a3d5c;margin-top:1.5rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="mark">◈</div>
+  <h1>Momentum Breakout Engine</h1>
+  <div class="sub">Inicializando sistema · Primera ejecución en curso</div>
+  <div class="status">
+    <div class="dot"></div>
+    <span class="status-txt">GitHub Actions ejecutando el engine...</span>
+  </div>
+  <div class="steps">
+    <div class="step"><span class="step-n">01</span> Descargando histórico de 87 activos</div>
+    <div class="step"><span class="step-n">02</span> Calculando percentiles de volatilidad</div>
+    <div class="step"><span class="step-n">03</span> Backtest walk-forward IS / OOS</div>
+    <div class="step"><span class="step-n">04</span> Generando señales de hoy</div>
+    <div class="step"><span class="step-n">05</span> Publicando dashboard</div>
+  </div>
+  <div class="eta">Esta página se reemplaza automáticamente cuando termine · ~30-40 min</div>
+</div>
+</body>
+</html>
