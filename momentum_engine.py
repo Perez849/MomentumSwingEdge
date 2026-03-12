@@ -210,20 +210,32 @@ BREAKOUT_VOL_PERCENTILE = 70
 
 # Gestión del trade
 # ──────────────────────────────────────────────────────────────────
-# Problema detectado en backtest: el TP de 2.5R raramente se alcanza
-# porque el trailing EMA8 mata los trades antes. Solución:
-# 1. TP más amplio (3.0R) para dejar correr las ganancias
-# 2. Trailing en dos fases: primero mover SL a breakeven, luego EMA21
-#    (EMA8 es demasiado ajustada para swing trading)
-# 3. Más tiempo máximo (30 días) para que los trades resuelvan
-# 4. SL break-even obligatorio en 1R para eliminar pérdidas innecesarias
-TP_R_MULTIPLE       = 3.0   # TP = entrada + riesgo × 3.0
-SL_BUFFER_PCT       = 0.5   # buffer más generoso en el SL estructural
-MAX_HOLD_DAYS       = 30    # 6 semanas — suficiente para tendencias reales
-TRAIL_EMA           = 21    # trailing sobre EMA21 (más espacio para respirar)
-BREAKEVEN_AT_R      = 0.8   # mover SL a break-even cuando P&L > 0.8R
-TRAIL_ACTIVATION    = 1.5   # activar trailing EMA21 cuando P&L > 1.5R
-TRAIL_EMA_BUFFER    = 0.008 # 0.8% por debajo de la EMA21 (más espacio)
+# DIAGNÓSTICO del backtest real:
+# - Salida por tiempo (T) domina y mata trades en +5-15% que podrían
+#   llegar al TP — esto destruye el avg ganancia
+# - SLX: llegó a +9.5% pico, salió en -0.58% — break-even no activó
+#   porque el backtest solo ve cierres, no el pico intradía
+#
+# SOLUCIÓN:
+# 1. Eliminar salida por tiempo fija — reemplazar por salida por
+#    MOMENTUM PERDIDO: precio cierra bajo EMA21 = tendencia rota
+# 2. Break-even basado en HIGH del día (no close) para capturar picos
+# 3. TP generoso (4R) — rara vez se alcanza pero define el techo
+# 4. Trailing en tres fases para dejar correr trades fuertes
+TP_R_MULTIPLE       = 4.0   # TP amplio — el trailing gestiona la salida real
+SL_BUFFER_PCT       = 0.5   # buffer en el SL estructural
+MAX_HOLD_DAYS       = 45    # límite de seguridad solo para trades estancados
+BREAKEVEN_AT_R      = 0.75  # break-even cuando HIGH del día supera 0.75R
+TRAIL_ACT_1         = 1.0   # fase 1: trailing EMA21 a 1R
+TRAIL_ACT_2         = 2.0   # fase 2: trailing EMA13 a 2R (más ajustado)
+TRAIL_ACT_3         = 3.0   # fase 3: trailing EMA8  a 3R (proteger ganancias)
+TRAIL_BUFFER_1      = 0.010 # 1.0% bajo EMA21
+TRAIL_BUFFER_2      = 0.007 # 0.7% bajo EMA13
+TRAIL_BUFFER_3      = 0.005 # 0.5% bajo EMA8
+# Salida por momentum: si precio cierra bajo EMA21 Y llevamos >5 días
+# el momentum está roto — salir aunque no haya tocado el SL
+MOMENTUM_EXIT_DAYS  = 5     # mínimo días antes de aplicar salida momentum
+MOMENTUM_EXIT_EMA   = 21    # usar EMA21 como referencia de momentum
 
 # Costes (backtest)
 COMMISSION_PCT = 0.10
@@ -495,30 +507,60 @@ def backtest(ticker, ind):
 
         # ── Gestión del trade abierto ────────────────────────────────
         if in_trade:
-            peak    = max(peak, price)
-            held    = i - entry_i
-            risk    = entry_price - sl_initial
-            pnl_r   = (price - entry_price) / risk if risk > 0 else 0  # P&L en múltiplos de R
+            high_today = _v(ind, 'h', i)   # máximo intradía — para break-even
+            peak       = max(peak, high_today)
+            held       = i - entry_i
+            risk       = entry_price - sl_initial
+            if risk <= 0:
+                in_trade = False
+                continue
 
-            # FASE 1: Mover SL a break-even cuando el trade supera 0.8R
-            # Elimina la posibilidad de perder en un trade que llegó a estar ganando
-            if pnl_r >= BREAKEVEN_AT_R and sl < entry_price:
-                sl = max(sl, entry_price * 1.001)  # break-even + 0.1% de buffer
+            # R alcanzado usando HIGH del día (más honesto para break-even)
+            pnl_r_high  = (high_today  - entry_price) / risk
+            # R actual usando CLOSE (para trailing y salida momentum)
+            pnl_r_close = (price - entry_price) / risk
 
-            # FASE 2: Trailing con EMA21 cuando supera 1.5R
-            # EMA21 da más espacio que EMA8 — el precio puede respirar
-            # sin que el trailing mate el trade prematuramente
-            if pnl_r >= TRAIL_ACTIVATION:
-                trail_level = _v(ind, 'ema21', i) * (1 - TRAIL_EMA_BUFFER)
-                sl = max(sl, trail_level)
+            # ── BREAK-EVEN: usar HIGH del día ────────────────────────
+            # Cuando el precio intradía supera 0.75R, mover SL a BE
+            # Usa HIGH para no perderse picos que luego cierran abajo
+            if pnl_r_high >= BREAKEVEN_AT_R and sl < entry_price:
+                sl = max(sl, entry_price * 1.001)  # BE + 0.1%
+
+            # ── TRAILING EN TRES FASES (sobre CLOSE) ────────────────
+            # Fase 1 a 1R: EMA21 con buffer 1% — espacio para respirar
+            if pnl_r_close >= TRAIL_ACT_1:
+                trail = _v(ind, 'ema21', i) * (1 - TRAIL_BUFFER_1)
+                sl = max(sl, trail)
+
+            # Fase 2 a 2R: EMA13 con buffer 0.7% — más ajustado
+            if pnl_r_close >= TRAIL_ACT_2:
+                trail = _v(ind, 'ema13', i) * (1 - TRAIL_BUFFER_2)
+                sl = max(sl, trail)
+
+            # Fase 3 a 3R: EMA8 con buffer 0.5% — proteger ganancias grandes
+            if pnl_r_close >= TRAIL_ACT_3:
+                trail = _v(ind, 'ema8', i) * (1 - TRAIL_BUFFER_3)
+                sl = max(sl, trail)
+
+            # ── SALIDA POR MOMENTUM PERDIDO ─────────────────────────
+            # Si precio cierra bajo EMA21 Y llevamos más de N días
+            # la tendencia está rota — salir aunque no toque el SL
+            # Esto reemplaza la salida por tiempo fija
+            momentum_broken = (
+                held >= MOMENTUM_EXIT_DAYS and
+                price < _v(ind, 'ema21', i) and
+                pnl_r_close > 0  # solo si estamos en beneficio (no cortar pérdidas aquí)
+            )
 
             reason = None
             if price <= sl:
                 reason = 'SL'
             elif price >= tp:
                 reason = 'TP'
+            elif momentum_broken:
+                reason = 'M'   # Momentum perdido
             elif held >= MAX_HOLD_DAYS:
-                reason = 'T'
+                reason = 'T'   # Tiempo límite de seguridad
 
             if reason:
                 exit_price = price * (1 - (COMMISSION_PCT + SLIPPAGE_PCT) / 100)
@@ -581,10 +623,15 @@ def backtest(ticker, ind):
 
 
 # ════════════════════════════════════════════════════════════════════
-# MÉTRICAS HONESTAS
+# MÉTRICAS POR TRADE (WR, PF, expectativa — independientes del portfolio)
 # ════════════════════════════════════════════════════════════════════
 
 def compute_metrics(trades):
+    """
+    Métricas estadísticas por trade individual.
+    WR, PF, expectativa son válidas aquí — no dependen del portfolio.
+    Equity total y MaxDD NO se calculan aquí — ver portfolio_simulate.
+    """
     if not trades:
         return None
     pnls = np.array([t['pnl'] for t in trades])
@@ -596,19 +643,8 @@ def compute_metrics(trades):
     pf    = abs(wins.sum() / loss.sum()) if loss.sum() != 0 else (99.0 if len(wins) else 0)
     avg_w = float(wins.mean()) if len(wins) else 0
     avg_l = float(loss.mean()) if len(loss) else 0
-    sh    = float(pnls.mean() / pnls.std() * np.sqrt(26)) if pnls.std() > 0 else 0
-
-    # Equity compuesta: cada trade es un % sobre capital actual
-    # Evita el MaxDD imposible de sumar porcentajes linealmente entre activos
-    equity_mult = np.cumprod(1 + pnls / 100)
-    equity_pct  = (equity_mult - 1) * 100
-    total       = float(equity_pct[-1])
-
-    # MaxDD sobre equity compuesta (pico a valle real en %)
-    running_max = np.maximum.accumulate(equity_mult)
-    dd_arr      = (equity_mult / running_max - 1) * 100
-    max_dd      = float(dd_arr.min())
-
+    # Sharpe por trade — útil para comparar IS vs OOS
+    sh    = float(pnls.mean() / pnls.std() * np.sqrt(52)) if pnls.std() > 0 else 0
     expectancy = avg_w * (wr / 100) + avg_l * (1 - wr / 100)
 
     by_reason = {}
@@ -616,10 +652,8 @@ def compute_metrics(trades):
         r = t.get('reason', '?')
         by_reason[r] = by_reason.get(r, 0) + 1
 
-    # Duración media
     avg_days = float(np.mean([t['days'] for t in trades]))
 
-    # Racha máxima de pérdidas
     streak = max_streak = cur = 0
     for p in pnls:
         if p < 0:
@@ -629,21 +663,130 @@ def compute_metrics(trades):
             cur = 0
 
     return {
-        'n':            n,
-        'wr':           round(wr, 1),
-        'pf':           round(pf, 2),
-        'sharpe':       round(sh, 2),
-        'avg_win':      round(avg_w, 2),
-        'avg_loss':     round(avg_l, 2),
-        'total_pct':    round(total, 1),
-        'max_dd':       round(max_dd, 1),
-        'expectancy':   round(expectancy, 3),
-        'avg_days':     round(avg_days, 1),
+        'n':               n,
+        'wr':              round(wr, 1),
+        'pf':              round(pf, 2),
+        'sharpe':          round(sh, 2),
+        'avg_win':         round(avg_w, 2),
+        'avg_loss':        round(avg_l, 2),
+        'expectancy':      round(expectancy, 3),
+        'avg_days':        round(avg_days, 1),
         'max_loss_streak': max_streak,
-        'by_reason':    by_reason,
-        'equity_curve': [round(float(e), 3) for e in equity_pct],
-        'pnls':         [round(float(p), 3) for p in pnls],
-        'trade_dates':  [t['entry_date'] for t in trades],
+        'by_reason':       by_reason,
+        'pnls':            [round(float(p), 3) for p in pnls],
+        'trade_dates':     [t['entry_date'] for t in trades],
+    }
+
+
+# ════════════════════════════════════════════════════════════════════
+# PORTFOLIO SIMULATOR — equity día a día con posiciones paralelas
+# ════════════════════════════════════════════════════════════════════
+
+def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=10.0):
+    """
+    Simula el portfolio día a día con posiciones paralelas reales.
+
+    Cada señal abre una posición con position_size_pct del capital INICIAL
+    (Kelly simplificado — tamaño fijo para evitar ruina). Con 87 activos
+    y señales espaciadas, raramente habrá más de 3-5 posiciones simultáneas.
+
+    Devuelve:
+    - equity_curve: serie diaria de valor del portfolio (índice normalizado a 100)
+    - daily_dates:  fechas correspondientes
+    - total_pct:    retorno total del portfolio
+    - max_dd:       drawdown máximo real (pico a valle en %)
+    - sharpe:       Sharpe anual sobre retornos diarios
+    - benchmark comparado contra SPY en mismo período
+    """
+    if not trades:
+        return None
+
+    # Ordenar trades por fecha de entrada
+    trades_s = sorted(trades, key=lambda t: t['entry_date'])
+    if not trades_s:
+        return None
+
+    # Rango de fechas del portfolio
+    start = pd.Timestamp(trades_s[0]['entry_date'])
+    end   = pd.Timestamp(max(t['exit_date'] for t in trades_s))
+    dates = pd.bdate_range(start, end)  # solo días hábiles
+    if len(dates) < 2:
+        return None
+
+    # Índice de fechas para lookup rápido
+    date_idx = {d.strftime('%Y-%m-%d'): i for i, d in enumerate(dates)}
+    n_days   = len(dates)
+
+    # Capital por posición (fijo en % del capital inicial)
+    pos_capital = initial_capital * position_size_pct / 100.0
+
+    # Construir matriz de P&L diario: para cada trade, cuánto gana/pierde cada día
+    # Usamos retorno lineal simple asumiendo movimiento uniforme entre entrada y salida
+    daily_pnl = np.zeros(n_days)
+
+    for t in trades_s:
+        entry_d = t['entry_date']
+        exit_d  = t['exit_date']
+        pnl_pct = t['pnl'] / 100.0  # retorno total del trade
+
+        ei = date_idx.get(entry_d)
+        xi = date_idx.get(exit_d)
+
+        if ei is None or xi is None or xi <= ei:
+            # Trade en un solo día — P&L en el día de salida
+            if xi is not None:
+                daily_pnl[xi] += pos_capital * pnl_pct
+            continue
+
+        # Distribuir P&L uniformemente entre entrada y salida
+        # (simplificación honesta — no tenemos precio intradiario)
+        n_trade_days = xi - ei
+        daily_rate   = pnl_pct / n_trade_days
+        for d in range(ei, xi + 1):
+            if d < n_days:
+                daily_pnl[d] += pos_capital * daily_rate
+
+    # Equity acumulada
+    equity = initial_capital + np.cumsum(daily_pnl)
+    equity = np.maximum(equity, 1.0)  # nunca negativo
+
+    # Normalizar a base 100
+    equity_idx = equity / initial_capital * 100
+
+    # MaxDD real sobre equity diaria
+    running_max = np.maximum.accumulate(equity)
+    dd_series   = (equity / running_max - 1) * 100
+    max_dd      = float(dd_series.min())
+
+    # Retorno total
+    total_pct = float((equity[-1] / initial_capital - 1) * 100)
+
+    # Sharpe sobre retornos diarios (anualizado)
+    daily_ret = np.diff(equity) / equity[:-1]
+    sharpe    = float(daily_ret.mean() / daily_ret.std() * np.sqrt(252)) if daily_ret.std() > 0 else 0
+
+    # CAGR
+    years = (end - start).days / 365.25
+    cagr  = float((equity[-1] / initial_capital) ** (1 / max(years, 0.1)) - 1) * 100 if years > 0 else 0
+
+    # Máx posiciones simultáneas (informativo)
+    max_concurrent = 0
+    for d in range(n_days):
+        date_str = dates[d].strftime('%Y-%m-%d')
+        concurrent = sum(1 for t in trades_s if t['entry_date'] <= date_str <= t['exit_date'])
+        max_concurrent = max(max_concurrent, concurrent)
+
+    return {
+        'equity_curve':    [round(float(v), 2) for v in equity_idx],
+        'daily_dates':     [d.strftime('%Y-%m-%d') for d in dates],
+        'total_pct':       round(total_pct, 1),
+        'max_dd':          round(max_dd, 1),
+        'sharpe':          round(sharpe, 2),
+        'cagr':            round(cagr, 1),
+        'max_concurrent':  max_concurrent,
+        'initial_capital': initial_capital,
+        'pos_size_pct':    position_size_pct,
+        'n_days':          n_days,
     }
 
 
@@ -1081,115 +1224,118 @@ if(is_&&oos){
     </div>`;
 }
 
-// ── Equity curve OOS — sistema vs SPY ────────────────────────────
-if(oos&&oos.equity_curve&&oos.equity_curve.length>1){
-  const spyEq = D.benchmark?.equity_curve || [];
-  const hasSpy = spyEq.length > 0;
+// ── Equity curve OOS — portfolio diario vs SPY ───────────────────
+const port = D.portfolio_oos;
+if(port && port.equity_curve && port.equity_curve.length > 1){
 
-  // Leyenda
-  const legendHTML = `
-    <div style="display:flex;gap:1.4rem;align-items:center;margin-bottom:.6rem;flex-wrap:wrap">
-      <div style="display:flex;align-items:center;gap:.45rem">
-        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#06d6a0" stroke-width="2.5"/><circle cx="14" cy="5" r="3.5" fill="#06d6a0"/></svg>
-        <span style="font-family:var(--mono);font-size:.6rem;color:var(--t2)">Sistema (${oos.total_pct>=0?'+':''}${oos.total_pct}%)</span>
-      </div>
-      ${hasSpy?`<div style="display:flex;align-items:center;gap:.45rem">
-        <svg width="28" height="10"><line x1="0" y1="5" x2="6" y2="5" stroke="#4cc9f0" stroke-width="1.5" stroke-dasharray="4,3"/><line x1="9" y1="5" x2="15" y2="5" stroke="#4cc9f0" stroke-width="1.5" stroke-dasharray="4,3"/><line x1="18" y1="5" x2="24" y2="5" stroke="#4cc9f0" stroke-width="1.5" stroke-dasharray="4,3"/></svg>
-        <span style="font-family:var(--mono);font-size:.6rem;color:var(--t2)">SPY Buy&Hold (${D.benchmark.total_pct>=0?'+':''}${D.benchmark.total_pct}%)</span>
-      </div>`:''}
-      <span style="font-family:var(--mono);font-size:.58rem;color:var(--t3);margin-left:auto">cada punto = 1 trade</span>
-    </div>`;
+  // Construir curva SPY normalizada a base 100 en el mismo período
+  const portDates = port.daily_dates || [];
+  let spyCurve = [];
+  if(D.benchmark && D.benchmark.equity_curve && D.benchmark.equity_curve.length > 1){
+    // Benchmark ya viene alineado con trade_dates (puntos), no con días
+    // Para el portfolio necesitamos interpolarlo a días
+    // Usamos el total_pct del benchmark para normalizar
+    const spyTotal = D.benchmark.total_pct;
+    const nDays = port.equity_curve.length;
+    // Crecimiento lineal del SPY como aproximación para la curva diaria
+    spyCurve = Array.from({length: nDays}, (_,i) => 100 * (1 + (spyTotal/100) * i/(nDays-1)));
+  }
+  const hasSpy = spyCurve.length > 0;
+
+  const sysTotal = port.total_pct;
+  const spyTotal2 = D.benchmark?.total_pct ?? null;
+
+  const legendHTML = `<div style="display:flex;gap:1.4rem;align-items:center;margin-bottom:.7rem;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:.5rem">
+      <div style="width:24px;height:3px;background:#06d6a0;border-radius:2px"></div>
+      <span style="font-family:var(--mono);font-size:.62rem;color:var(--t2)">Portfolio (${sysTotal>=0?'+':''}${sysTotal}% · 10% capital/trade)</span>
+    </div>
+    ${hasSpy?`<div style="display:flex;align-items:center;gap:.5rem">
+      <div style="width:24px;height:2px;background:#4cc9f0;border-radius:2px;opacity:.7;background:repeating-linear-gradient(90deg,#4cc9f0 0,#4cc9f0 5px,transparent 5px,transparent 9px)"></div>
+      <span style="font-family:var(--mono);font-size:.62rem;color:var(--t2)">SPY Buy&Hold (${spyTotal2>=0?'+':''}${spyTotal2}%)</span>
+    </div>`:''}
+    <span style="font-family:var(--mono);font-size:.58rem;color:var(--t3);margin-left:auto">base 100 · 10% por posición · máx ${port.max_concurrent||'?'} simultáneas</span>
+  </div>`;
 
   $('eq-section').innerHTML=`
-    <div class="section-head">Curva de equity — Out-of-Sample vs Benchmark</div>
+    <div class="section-head">Curva de equity — Portfolio Out-of-Sample vs Benchmark</div>
     <div class="chart-card">
       <div class="chart-title">${legendHTML}</div>
-      <canvas id="eq-cv" height="260"></canvas>
+      <canvas id="eq-cv" height="280"></canvas>
     </div>`;
 
   setTimeout(()=>{
     const cv=$('eq-cv'); if(!cv) return;
-    const W=cv.offsetWidth||800, H=260;
+    const W=cv.offsetWidth||800, H=280;
     cv.width=W*devicePixelRatio; cv.height=H*devicePixelRatio;
     const ctx=cv.getContext('2d'); ctx.scale(devicePixelRatio,devicePixelRatio);
 
-    const eq=oos.equity_curve, n=eq.length;
-    const allVals=[...eq, ...(hasSpy?spyEq:[]), 0];
-    const mn=Math.min(...allVals), mx=Math.max(...allVals);
-    const pad={t:12,r:80,b:32,l:58}, cW=W-pad.l-pad.r, cH=H-pad.t-pad.b;
+    const eq=port.equity_curve, n=eq.length;
+    const allVals=[...eq, ...(hasSpy?spyCurve:[]), 100];
+    const mn=Math.min(...allVals)*0.995, mx=Math.max(...allVals)*1.005;
+    const pad={t:14,r:72,b:36,l:58}, cW=W-pad.l-pad.r, cH=H-pad.t-pad.b;
     const rng=mx-mn||1;
     const xp=i=>pad.l+i/Math.max(n-1,1)*cW;
     const yp=v=>pad.t+(1-(v-mn)/rng)*cH;
 
-    // Grid horizontal con valores
+    // Grid + labels Y (base 100)
     ctx.strokeStyle='rgba(20,29,53,.9)'; ctx.lineWidth=1;
     for(let g=0;g<=5;g++){
-      const y=pad.t+g/5*cH;
-      ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r+8,y); ctx.stroke();
-      const v=mn+(1-g/5)*rng;
+      const y=pad.t+g/5*cH, v=mn+(1-g/5)*rng;
+      ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r+6,y); ctx.stroke();
       ctx.fillStyle='rgba(77,106,153,.85)'; ctx.font='9px Syne Mono,monospace';
       ctx.textAlign='right';
-      ctx.fillText((v>=0?'+':'')+v.toFixed(1)+'%', pad.l-5, y+3);
+      const disp = v>=100 ? '+'+((v-100).toFixed(0))+'%' : '-'+((100-v).toFixed(0))+'%';
+      ctx.fillText(disp, pad.l-4, y+3);
     }
     ctx.textAlign='left';
 
-    // Línea cero
-    const y0=yp(0);
-    ctx.strokeStyle='rgba(255,255,255,.08)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
-    ctx.beginPath(); ctx.moveTo(pad.l,y0); ctx.lineTo(W-pad.r,y0); ctx.stroke();
+    // Línea base 100
+    const y100=yp(100);
+    ctx.strokeStyle='rgba(255,255,255,.1)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(pad.l,y100); ctx.lineTo(W-pad.r,y100); ctx.stroke();
     ctx.setLineDash([]);
+    ctx.fillStyle='rgba(255,255,255,.2)'; ctx.font='8px Syne Mono,monospace';
+    ctx.fillText('100', W-pad.r+4, y100+3);
 
-    // ── SPY Buy&Hold (línea punteada azul) ───────────────────────────
-    if(hasSpy&&spyEq.length===n){
-      // Fill SPY
-      ctx.beginPath(); ctx.moveTo(xp(0),yp(0));
-      spyEq.forEach((v,i)=>ctx.lineTo(xp(i),yp(v)));
-      ctx.lineTo(xp(n-1),pad.t+cH); ctx.lineTo(pad.l,pad.t+cH); ctx.closePath();
-      ctx.fillStyle='rgba(76,201,240,.04)'; ctx.fill();
-      // Línea SPY
-      ctx.strokeStyle='#4cc9f0'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
-      ctx.beginPath(); spyEq.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));
+    // SPY curva (punteada azul)
+    if(hasSpy){
+      ctx.strokeStyle='rgba(76,201,240,.6)'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+      ctx.beginPath();
+      spyCurve.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));
       ctx.stroke(); ctx.setLineDash([]);
-      // Label final SPY
-      const lastSpy=spyEq[n-1];
-      ctx.fillStyle='#4cc9f0'; ctx.font='bold 8px Syne Mono,monospace';
-      ctx.fillText('SPY', W-pad.r+6, yp(lastSpy)+3);
+      ctx.fillStyle='rgba(76,201,240,.7)'; ctx.font='bold 8px Syne Mono,monospace';
+      ctx.fillText('SPY', W-pad.r+4, yp(spyCurve[n-1])+3);
     }
 
-    // ── Sistema (línea sólida) ────────────────────────────────────────
-    const sysColor=eq[n-1]>=0?'#06d6a0':'#ff4d6d';
-    // Fill sistema
-    ctx.beginPath(); ctx.moveTo(xp(0),yp(0));
+    // Portfolio: fill bajo la curva
+    const sysColor=eq[n-1]>=100?'#06d6a0':'#ff4d6d';
+    ctx.beginPath(); ctx.moveTo(xp(0),yp(100));
     eq.forEach((v,i)=>ctx.lineTo(xp(i),yp(v)));
-    ctx.lineTo(xp(n-1),yp(0)); ctx.closePath();
+    ctx.lineTo(xp(n-1),yp(100)); ctx.closePath();
     const grad=ctx.createLinearGradient(0,pad.t,0,pad.t+cH);
-    grad.addColorStop(0,eq[n-1]>=0?'rgba(6,214,160,.18)':'rgba(255,77,109,.18)');
+    grad.addColorStop(0,eq[n-1]>=100?'rgba(6,214,160,.2)':'rgba(255,77,109,.2)');
     grad.addColorStop(1,'transparent');
     ctx.fillStyle=grad; ctx.fill();
-    // Línea sistema
+
+    // Portfolio: línea principal
     ctx.strokeStyle=sysColor; ctx.lineWidth=2.5;
-    ctx.beginPath(); eq.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));
+    ctx.beginPath();
+    eq.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));
     ctx.stroke();
-    // Label final sistema
     ctx.fillStyle=sysColor; ctx.font='bold 8px Syne Mono,monospace';
-    ctx.fillText('SYS', W-pad.r+6, yp(eq[n-1])+3);
+    ctx.fillText('SYS', W-pad.r+4, yp(eq[n-1])+3);
 
-    // Dots (win verde, loss rojo)
-    eq.forEach((v,i)=>{
-      ctx.beginPath(); ctx.arc(xp(i),yp(v),3.5,0,Math.PI*2);
-      ctx.fillStyle=oos.pnls&&oos.pnls[i]>=0?'#06d6a0':'#ff4d6d'; ctx.fill();
-    });
-
-    // Fechas en X
-    if(oos.trade_dates){
+    // Fechas en X (de daily_dates)
+    if(portDates.length){
       const step=Math.max(1,Math.ceil(n/8));
-      oos.trade_dates.forEach((d,i)=>{
+      portDates.forEach((d,i)=>{
         if(i%step!==0) return;
         ctx.fillStyle='rgba(61,90,138,.8)'; ctx.font='7px Syne Mono,monospace';
-        ctx.fillText(d.slice(5),xp(i)-12,H-5);
+        ctx.fillText(d.slice(0,7), xp(i)-14, H-6);
       });
     }
-  },60);
+  },80);
 }
 
 // ── Radar table ───────────────────────────────────────────────────
@@ -1230,7 +1376,7 @@ if(oos_trades.length){
         <thead><tr>
           <th>Ticker</th><th>Entrada</th><th>Salida</th>
           <th>$ Entrada</th><th>$ Salida</th>
-          <th>P&L</th><th>Pico</th><th>Días</th><th>Motivo</th>
+          <th>P&L</th><th>Pico</th><th>R máx</th><th>Días</th><th>Motivo</th>
         </tr></thead>
         <tbody>${oos_trades.map(t=>{
           const win=t.pnl>=0;
@@ -1243,9 +1389,15 @@ if(oos_trades.length){
               ${win?'+':''}${t.pnl?.toFixed(2)}%
             </td>
             <td style="color:var(--t3);font-size:.65rem">+${t.peak_pnl?.toFixed(1)||0}%</td>
+            <td style="color:${(t.r_achieved||0)>=2?'var(--safe)':(t.r_achieved||0)>=1?'var(--watch)':'var(--t3)'};font-size:.65rem">${t.r_achieved!=null?t.r_achieved+'R':'—'}</td>
             <td style="color:var(--t3)">${t.days}d</td>
             <td>
-              <span style="font-family:var(--mono);font-size:.58rem;color:${t.reason==='TP'?'var(--safe)':t.reason==='SL'?'var(--fire)':'var(--watch)'}">${t.reason}</span>
+              <span style="font-family:var(--mono);font-size:.6rem;font-weight:600;padding:.15rem .4rem;border-radius:5px;${
+                t.reason==='TP'?'background:rgba(6,214,160,.12);color:var(--safe)':
+                t.reason==='SL'?'background:rgba(255,77,109,.1);color:var(--fire)':
+                t.reason==='M'?'background:rgba(255,214,10,.1);color:var(--watch)':
+                'background:rgba(77,106,153,.1);color:var(--t3)'
+              }">${t.reason==='M'?'M⚡':t.reason}</span>
             </td>
           </tr>`;}).join('')}
         </tbody>
@@ -1455,6 +1607,23 @@ def main():
     m_is_global  = compute_metrics(all_is_trades)
     m_oos_global = compute_metrics(all_oos_trades)
 
+    # Portfolio simulation — equity día a día con posiciones paralelas
+    # 10% del capital por posición = máximo 10 posiciones simultáneas con el 100%
+    port_is  = portfolio_simulate(all_is_trades,  position_size_pct=10.0)
+    port_oos = portfolio_simulate(all_oos_trades, position_size_pct=10.0)
+
+    # Añadir métricas de portfolio a los dicts globales
+    if m_is_global and port_is:
+        m_is_global['total_pct'] = port_is['total_pct']
+        m_is_global['max_dd']    = port_is['max_dd']
+        m_is_global['sharpe']    = port_is['sharpe']
+        m_is_global['cagr']      = port_is['cagr']
+    if m_oos_global and port_oos:
+        m_oos_global['total_pct'] = port_oos['total_pct']
+        m_oos_global['max_dd']    = port_oos['max_dd']
+        m_oos_global['sharpe']    = port_oos['sharpe']
+        m_oos_global['cagr']      = port_oos['cagr']
+
     # Períodos
     is_dates  = sorted([t['entry_date'] for t in all_is_trades])
     oos_dates = sorted([t['entry_date'] for t in all_oos_trades])
@@ -1567,6 +1736,8 @@ def main():
         "oos_period":    oos_period,
         "is_metrics":    m_is_global,
         "oos_metrics":   m_oos_global,
+        "portfolio_oos": port_oos,
+        "portfolio_is":  port_is,
         "benchmark":     benchmark,
         "sigs_per_month": sigs_per_month,
         "signals":       all_signals,
