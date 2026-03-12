@@ -209,11 +209,21 @@ PANIC_VOL_PERCENTILE = 80
 BREAKOUT_VOL_PERCENTILE = 70
 
 # Gestión del trade
-TP_R_MULTIPLE     = 2.5   # TP = entrada + riesgo × 2.5
-SL_BUFFER_PCT     = 0.3   # buffer por debajo del mínimo de compresión (%)
-MAX_HOLD_DAYS     = 20    # salida por tiempo máximo
-TRAIL_EMA         = 8     # trailing stop sobre EMA8
-TRAIL_ACTIVATION  = 1.0   # activar trailing cuando P&L > 1×riesgo
+# ──────────────────────────────────────────────────────────────────
+# Problema detectado en backtest: el TP de 2.5R raramente se alcanza
+# porque el trailing EMA8 mata los trades antes. Solución:
+# 1. TP más amplio (3.0R) para dejar correr las ganancias
+# 2. Trailing en dos fases: primero mover SL a breakeven, luego EMA21
+#    (EMA8 es demasiado ajustada para swing trading)
+# 3. Más tiempo máximo (30 días) para que los trades resuelvan
+# 4. SL break-even obligatorio en 1R para eliminar pérdidas innecesarias
+TP_R_MULTIPLE       = 3.0   # TP = entrada + riesgo × 3.0
+SL_BUFFER_PCT       = 0.5   # buffer más generoso en el SL estructural
+MAX_HOLD_DAYS       = 30    # 6 semanas — suficiente para tendencias reales
+TRAIL_EMA           = 21    # trailing sobre EMA21 (más espacio para respirar)
+BREAKEVEN_AT_R      = 0.8   # mover SL a break-even cuando P&L > 0.8R
+TRAIL_ACTIVATION    = 1.5   # activar trailing EMA21 cuando P&L > 1.5R
+TRAIL_EMA_BUFFER    = 0.008 # 0.8% por debajo de la EMA21 (más espacio)
 
 # Costes (backtest)
 COMMISSION_PCT = 0.10
@@ -267,6 +277,7 @@ def compute_indicators(df):
     ema50 = c.ewm(span=TREND_EMA, adjust=False).mean()
     ema8  = c.ewm(span=8,  adjust=False).mean()
     ema21 = c.ewm(span=21, adjust=False).mean()
+    ema13 = c.ewm(span=13, adjust=False).mean()  # para trailing intermedio
 
     # Volumen — percentil móvil de 252 días
     def vol_rank(vseries, window=252):
@@ -296,6 +307,7 @@ def compute_indicators(df):
         'vol_pct':  vol_pct,           # percentil histórico de volatilidad
         'vol_rank': vol_rank_arr,      # percentil histórico de volumen
         'ema8':     ema8.values.astype(float),
+        'ema13':    ema13.values.astype(float),
         'ema21':    ema21.values.astype(float),
         'ema50':    ema50.values.astype(float),
         'dates':    df.index,
@@ -472,7 +484,7 @@ def backtest(ticker, ind):
     trades = []
 
     in_trade    = False
-    entry_price = sl = tp = peak = 0.0
+    entry_price = sl = sl_initial = tp = peak = 0.0
     entry_i     = 0
     entry_date  = None
 
@@ -485,12 +497,19 @@ def backtest(ticker, ind):
         if in_trade:
             peak    = max(peak, price)
             held    = i - entry_i
-            pnl_pct = (price - entry_price) / entry_price * 100
+            risk    = entry_price - sl_initial
+            pnl_r   = (price - entry_price) / risk if risk > 0 else 0  # P&L en múltiplos de R
 
-            # Trailing stop: EMA8 una vez que el precio supera 1R de beneficio
-            r1 = (entry_price - sl) * TRAIL_ACTIVATION
-            if price >= entry_price + r1:
-                trail_level = _v(ind, 'ema8', i) * (1 - 0.003)
+            # FASE 1: Mover SL a break-even cuando el trade supera 0.8R
+            # Elimina la posibilidad de perder en un trade que llegó a estar ganando
+            if pnl_r >= BREAKEVEN_AT_R and sl < entry_price:
+                sl = max(sl, entry_price * 1.001)  # break-even + 0.1% de buffer
+
+            # FASE 2: Trailing con EMA21 cuando supera 1.5R
+            # EMA21 da más espacio que EMA8 — el precio puede respirar
+            # sin que el trailing mate el trade prematuramente
+            if pnl_r >= TRAIL_ACTIVATION:
+                trail_level = _v(ind, 'ema21', i) * (1 - TRAIL_EMA_BUFFER)
                 sl = max(sl, trail_level)
 
             reason = None
@@ -505,18 +524,20 @@ def backtest(ticker, ind):
                 exit_price = price * (1 - (COMMISSION_PCT + SLIPPAGE_PCT) / 100)
                 pnl_net    = (exit_price - entry_price) / entry_price * 100
 
+                r_achieved = round((peak - entry_price) / (entry_price - sl_initial), 2) if (entry_price - sl_initial) > 0 else 0
                 trades.append({
                     'ticker':      ticker,
                     'entry_date':  str(entry_date)[:10],
                     'exit_date':   str(ind['dates'][i])[:10],
                     'entry_price': round(entry_price, 4),
                     'exit_price':  round(exit_price, 4),
-                    'stop_loss':   round(sl, 4),
+                    'stop_loss':   round(sl_initial, 4),
                     'take_profit': round(tp, 4),
                     'pnl':         round(pnl_net, 3),
                     'days':        held,
                     'reason':      reason,
                     'peak_pnl':    round((peak - entry_price) / entry_price * 100, 2),
+                    'r_achieved':  r_achieved,
                 })
                 in_trade = False
             continue
@@ -550,6 +571,7 @@ def backtest(ticker, ind):
         in_trade    = True
         entry_price = entry_p
         sl          = sl_p
+        sl_initial  = sl_p   # guardar SL original para calcular R
         tp          = tp_p
         peak        = entry_price
         entry_i     = i
@@ -574,12 +596,18 @@ def compute_metrics(trades):
     pf    = abs(wins.sum() / loss.sum()) if loss.sum() != 0 else (99.0 if len(wins) else 0)
     avg_w = float(wins.mean()) if len(wins) else 0
     avg_l = float(loss.mean()) if len(loss) else 0
-    total = float(pnls.sum())
     sh    = float(pnls.mean() / pnls.std() * np.sqrt(26)) if pnls.std() > 0 else 0
 
-    equity = np.cumsum(pnls)
-    dd_arr = equity - np.maximum.accumulate(equity)
-    max_dd = float(dd_arr.min())
+    # Equity compuesta: cada trade es un % sobre capital actual
+    # Evita el MaxDD imposible de sumar porcentajes linealmente entre activos
+    equity_mult = np.cumprod(1 + pnls / 100)
+    equity_pct  = (equity_mult - 1) * 100
+    total       = float(equity_pct[-1])
+
+    # MaxDD sobre equity compuesta (pico a valle real en %)
+    running_max = np.maximum.accumulate(equity_mult)
+    dd_arr      = (equity_mult / running_max - 1) * 100
+    max_dd      = float(dd_arr.min())
 
     expectancy = avg_w * (wr / 100) + avg_l * (1 - wr / 100)
 
@@ -613,7 +641,7 @@ def compute_metrics(trades):
         'avg_days':     round(avg_days, 1),
         'max_loss_streak': max_streak,
         'by_reason':    by_reason,
-        'equity_curve': [round(float(e), 3) for e in equity],
+        'equity_curve': [round(float(e), 3) for e in equity_pct],
         'pnls':         [round(float(p), 3) for p in pnls],
         'trade_dates':  [t['entry_date'] for t in trades],
     }
@@ -1053,57 +1081,112 @@ if(is_&&oos){
     </div>`;
 }
 
-// ── Equity curve OOS ─────────────────────────────────────────────
+// ── Equity curve OOS — sistema vs SPY ────────────────────────────
 if(oos&&oos.equity_curve&&oos.equity_curve.length>1){
-  $('eq-section').innerHTML=`
-    <div class="section-head">Curva de equity — Out-of-Sample</div>
-    <div class="chart-card">
-      <div class="chart-title">P&L acumulado % · cada punto = 1 trade · línea punteada = benchmark SPY</div>
-      <canvas id="eq-cv" height="220"></canvas>
+  const spyEq = D.benchmark?.equity_curve || [];
+  const hasSpy = spyEq.length > 0;
+
+  // Leyenda
+  const legendHTML = `
+    <div style="display:flex;gap:1.4rem;align-items:center;margin-bottom:.6rem;flex-wrap:wrap">
+      <div style="display:flex;align-items:center;gap:.45rem">
+        <svg width="28" height="10"><line x1="0" y1="5" x2="28" y2="5" stroke="#06d6a0" stroke-width="2.5"/><circle cx="14" cy="5" r="3.5" fill="#06d6a0"/></svg>
+        <span style="font-family:var(--mono);font-size:.6rem;color:var(--t2)">Sistema (${oos.total_pct>=0?'+':''}${oos.total_pct}%)</span>
+      </div>
+      ${hasSpy?`<div style="display:flex;align-items:center;gap:.45rem">
+        <svg width="28" height="10"><line x1="0" y1="5" x2="6" y2="5" stroke="#4cc9f0" stroke-width="1.5" stroke-dasharray="4,3"/><line x1="9" y1="5" x2="15" y2="5" stroke="#4cc9f0" stroke-width="1.5" stroke-dasharray="4,3"/><line x1="18" y1="5" x2="24" y2="5" stroke="#4cc9f0" stroke-width="1.5" stroke-dasharray="4,3"/></svg>
+        <span style="font-family:var(--mono);font-size:.6rem;color:var(--t2)">SPY Buy&Hold (${D.benchmark.total_pct>=0?'+':''}${D.benchmark.total_pct}%)</span>
+      </div>`:''}
+      <span style="font-family:var(--mono);font-size:.58rem;color:var(--t3);margin-left:auto">cada punto = 1 trade</span>
     </div>`;
+
+  $('eq-section').innerHTML=`
+    <div class="section-head">Curva de equity — Out-of-Sample vs Benchmark</div>
+    <div class="chart-card">
+      <div class="chart-title">${legendHTML}</div>
+      <canvas id="eq-cv" height="260"></canvas>
+    </div>`;
+
   setTimeout(()=>{
     const cv=$('eq-cv'); if(!cv) return;
-    const W=cv.offsetWidth||800, H=220;
+    const W=cv.offsetWidth||800, H=260;
     cv.width=W*devicePixelRatio; cv.height=H*devicePixelRatio;
     const ctx=cv.getContext('2d'); ctx.scale(devicePixelRatio,devicePixelRatio);
+
     const eq=oos.equity_curve, n=eq.length;
-    const mn=Math.min(0,...eq), mx=Math.max(0,...eq);
-    const pad={t:12,r:16,b:28,l:52}, cW=W-pad.l-pad.r, cH=H-pad.t-pad.b;
+    const allVals=[...eq, ...(hasSpy?spyEq:[]), 0];
+    const mn=Math.min(...allVals), mx=Math.max(...allVals);
+    const pad={t:12,r:80,b:32,l:58}, cW=W-pad.l-pad.r, cH=H-pad.t-pad.b;
     const rng=mx-mn||1;
     const xp=i=>pad.l+i/Math.max(n-1,1)*cW;
     const yp=v=>pad.t+(1-(v-mn)/rng)*cH;
-    // Grid
+
+    // Grid horizontal con valores
     ctx.strokeStyle='rgba(20,29,53,.9)'; ctx.lineWidth=1;
-    for(let g=0;g<=4;g++){const y=pad.t+g/4*cH; ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r,y); ctx.stroke();}
-    // Zero
-    const y0=yp(0); ctx.strokeStyle='rgba(255,255,255,.1)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
-    ctx.beginPath(); ctx.moveTo(pad.l,y0); ctx.lineTo(W-pad.r,y0); ctx.stroke(); ctx.setLineDash([]);
-    // Fill
+    for(let g=0;g<=5;g++){
+      const y=pad.t+g/5*cH;
+      ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(W-pad.r+8,y); ctx.stroke();
+      const v=mn+(1-g/5)*rng;
+      ctx.fillStyle='rgba(77,106,153,.85)'; ctx.font='9px Syne Mono,monospace';
+      ctx.textAlign='right';
+      ctx.fillText((v>=0?'+':'')+v.toFixed(1)+'%', pad.l-5, y+3);
+    }
+    ctx.textAlign='left';
+
+    // Línea cero
+    const y0=yp(0);
+    ctx.strokeStyle='rgba(255,255,255,.08)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.moveTo(pad.l,y0); ctx.lineTo(W-pad.r,y0); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // ── SPY Buy&Hold (línea punteada azul) ───────────────────────────
+    if(hasSpy&&spyEq.length===n){
+      // Fill SPY
+      ctx.beginPath(); ctx.moveTo(xp(0),yp(0));
+      spyEq.forEach((v,i)=>ctx.lineTo(xp(i),yp(v)));
+      ctx.lineTo(xp(n-1),pad.t+cH); ctx.lineTo(pad.l,pad.t+cH); ctx.closePath();
+      ctx.fillStyle='rgba(76,201,240,.04)'; ctx.fill();
+      // Línea SPY
+      ctx.strokeStyle='#4cc9f0'; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+      ctx.beginPath(); spyEq.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));
+      ctx.stroke(); ctx.setLineDash([]);
+      // Label final SPY
+      const lastSpy=spyEq[n-1];
+      ctx.fillStyle='#4cc9f0'; ctx.font='bold 8px Syne Mono,monospace';
+      ctx.fillText('SPY', W-pad.r+6, yp(lastSpy)+3);
+    }
+
+    // ── Sistema (línea sólida) ────────────────────────────────────────
+    const sysColor=eq[n-1]>=0?'#06d6a0':'#ff4d6d';
+    // Fill sistema
     ctx.beginPath(); ctx.moveTo(xp(0),yp(0));
     eq.forEach((v,i)=>ctx.lineTo(xp(i),yp(v)));
     ctx.lineTo(xp(n-1),yp(0)); ctx.closePath();
     const grad=ctx.createLinearGradient(0,pad.t,0,pad.t+cH);
-    grad.addColorStop(0,eq[n-1]>=0?'rgba(6,214,160,.15)':'rgba(255,77,109,.15)');
+    grad.addColorStop(0,eq[n-1]>=0?'rgba(6,214,160,.18)':'rgba(255,77,109,.18)');
     grad.addColorStop(1,'transparent');
     ctx.fillStyle=grad; ctx.fill();
-    // Line
-    ctx.strokeStyle=eq[n-1]>=0?'#06d6a0':'#ff4d6d'; ctx.lineWidth=2.5;
-    ctx.beginPath(); eq.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v))); ctx.stroke();
-    // Dots at each trade
+    // Línea sistema
+    ctx.strokeStyle=sysColor; ctx.lineWidth=2.5;
+    ctx.beginPath(); eq.forEach((v,i)=>i===0?ctx.moveTo(xp(i),yp(v)):ctx.lineTo(xp(i),yp(v)));
+    ctx.stroke();
+    // Label final sistema
+    ctx.fillStyle=sysColor; ctx.font='bold 8px Syne Mono,monospace';
+    ctx.fillText('SYS', W-pad.r+6, yp(eq[n-1])+3);
+
+    // Dots (win verde, loss rojo)
     eq.forEach((v,i)=>{
       ctx.beginPath(); ctx.arc(xp(i),yp(v),3.5,0,Math.PI*2);
       ctx.fillStyle=oos.pnls&&oos.pnls[i]>=0?'#06d6a0':'#ff4d6d'; ctx.fill();
     });
-    // Y labels
-    ctx.fillStyle='rgba(77,106,153,.9)'; ctx.font='9px Syne Mono,monospace';
-    for(let g=0;g<=4;g++){const v=mn+(1-g/4)*rng; ctx.fillText(v.toFixed(1)+'%',2,pad.t+g/4*cH+3);}
-    // Trade dates on X
+
+    // Fechas en X
     if(oos.trade_dates){
       const step=Math.max(1,Math.ceil(n/8));
       oos.trade_dates.forEach((d,i)=>{
         if(i%step!==0) return;
-        ctx.fillStyle='rgba(77,106,153,.7)'; ctx.font='8px Syne Mono,monospace';
-        ctx.fillText(d.slice(5),xp(i)-10,H-5);
+        ctx.fillStyle='rgba(61,90,138,.8)'; ctx.font='7px Syne Mono,monospace';
+        ctx.fillText(d.slice(5),xp(i)-12,H-5);
       });
     }
   },60);
@@ -1320,12 +1403,23 @@ def main():
         # Calcular indicadores sobre el histórico completo
         ind = compute_indicators(df)
 
-        # ── BACKTEST: split IS/OOS ───────────────────────────────────
-        n      = len(df)
-        is_end = int(n * IS_RATIO)
+        # ── BACKTEST: split IS/OOS por FECHA FIJA global ─────────────
+        # Fecha de corte fija: 2020-01-01
+        # IS = todo antes de 2020 (historia larga para calibrar)
+        # OOS = 2020 en adelante (incluye COVID crash, bull 2021,
+        #       bear 2022, y bull 2023-2026 — periodo muy exigente)
+        # Usar fecha fija es más honesto que split por % de barras,
+        # que daría fechas distintas para cada activo.
+        OOS_START = pd.Timestamp("2020-01-01")
 
-        df_is  = df.iloc[:is_end]
-        df_oos = df.iloc[is_end:]
+        df_is  = df[df.index < OOS_START]
+        df_oos = df[df.index >= OOS_START]
+
+        if len(df_is) < 600 or len(df_oos) < 100:
+            print(f"{Y}⚠ Historia insuficiente para split IS/OOS{RST}")
+            # Backtest sobre todo el histórico si no hay suficientes datos
+            df_is  = df
+            df_oos = df.iloc[int(len(df)*0.65):]
 
         ind_is  = compute_indicators(df_is)
         ind_oos = compute_indicators(df_oos)
@@ -1376,7 +1470,7 @@ def main():
         months = max((last - first).days / 30, 1)
         sigs_per_month = round(len(all_oos_trades) / months, 1)
 
-    # Benchmark SPY
+    # Benchmark SPY — con equity curve alineada a las fechas de trades OOS
     benchmark = None
     try:
         spy = yf.download("SPY", start=oos_dates[0], end=oos_dates[-1],
@@ -1385,12 +1479,29 @@ def main():
             spy.columns = spy.columns.get_level_values(0)
         if len(spy) >= 2:
             spy_c = spy['Close'].squeeze()
-            spy_ret = float((spy_c.iloc[-1] / spy_c.iloc[0] - 1) * 100)
-            spy_eq  = np.cumsum(spy_c.pct_change().dropna().values * 100)
-            spy_dd  = float((spy_eq - np.maximum.accumulate(spy_eq)).min())
+
+            # P&L total y MaxDD sobre equity compuesta
+            spy_mult  = np.cumprod(1 + spy_c.pct_change().dropna().values / 100)
+            spy_ret   = float((spy_mult[-1] - 1) * 100)
+            spy_run   = np.maximum.accumulate(spy_mult)
+            spy_dd    = float(((spy_mult / spy_run) - 1).min() * 100)
+
+            # Equity curve alineada a las fechas de trades OOS
+            # Para cada trade tomamos el % acumulado del SPY en esa fecha
+            spy_idx = pd.DatetimeIndex(spy_c.index)
+            aligned = []
+            for d in oos_dates:
+                try:
+                    loc = spy_idx.searchsorted(pd.Timestamp(d))
+                    loc = min(loc, len(spy_mult) - 1)
+                    aligned.append(round(float((spy_mult[loc] - 1) * 100), 2))
+                except Exception:
+                    aligned.append(aligned[-1] if aligned else 0.0)
+
             benchmark = {
-                'total_pct': round(spy_ret, 1),
-                'max_dd':    round(spy_dd, 1),
+                'total_pct':   round(spy_ret, 1),
+                'max_dd':      round(spy_dd, 1),
+                'equity_curve': aligned,  # alineada con trade_dates OOS
             }
     except Exception:
         pass
