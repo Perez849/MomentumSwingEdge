@@ -289,7 +289,7 @@ TREND_BARS = 60
 
 # Cuántos múltiplos del ATR diario normalizado debe haber subido
 # 1.5 significa: ha subido más de 1.5 veces su rango diario típico en 60 días
-TREND_ATR_MULTIPLE = 1.5
+TREND_ATR_MULTIPLE = 2.0   # más exigente — solo tendencias con fuerza real
 
 # EMA larga para confirmar tendencia
 TREND_EMA = 50
@@ -301,7 +301,7 @@ COMPRESSION_VOL_PERCENTILE = 25
 PANIC_VOL_PERCENTILE = 80
 
 # Percentil de volumen mínimo en el breakout
-BREAKOUT_VOL_PERCENTILE = 70
+BREAKOUT_VOL_PERCENTILE = 75   # más selectivo — filtrar breakouts sin fuerza
 
 # Gestión del trade
 # ──────────────────────────────────────────────────────────────────
@@ -322,21 +322,27 @@ BREAKOUT_VOL_PERCENTILE = 70
 # 4. A 3.0R de HIGH: trailing peak - 1.0×ATR (proteger ganancias grandes)
 TP_R_MULTIPLE       = 5.0   # TP amplio — trailing gestiona la salida real
 SL_BUFFER_PCT       = 0.5   # buffer en el SL estructural
-MAX_HOLD_DAYS       = 60    # límite de seguridad
+MAX_HOLD_DAYS       = 40    # liberar capital antes — momentum muere antes de 60d
 BREAKEVEN_AT_R      = 1.0   # break-even cuando HIGH supera 1R
 
-# Trailing como % del pico (más robusto que múltiplos de ATR absolutos)
-# SL = peak × (1 - TRAIL_PCT_X) — se actualiza con cada nuevo HIGH
-# Lógica: si el pico es $116 y usamos 4%, el SL queda en $111.4
-# Esto es consistente independientemente del precio absoluto del activo
+# Trailing dual: % del pico Y % de ganancia protegida (el mayor de los dos)
+# SL = max(peak × (1 - TRAIL_PCT), entry + TRAIL_GAIN × ganancia_actual)
+# Esto garantiza que en fase 1 siempre proteges al menos el 35% de la ganancia
+# y en fase 3 proteges al menos el 75% — independientemente del riesgo inicial.
 
 TRAIL_ACT_1_R       = 1.0   # activar fase 1 cuando HIGH alcanza 1R
-TRAIL_ACT_2_R       = 2.0   # activar fase 2 cuando HIGH alcanza 2R  
+TRAIL_ACT_2_R       = 2.0   # activar fase 2 cuando HIGH alcanza 2R
 TRAIL_ACT_3_R       = 3.0   # activar fase 3 cuando HIGH alcanza 3R
 
-TRAIL_PCT_1         = 0.06  # fase 1: SL = peak × (1 - 6%) — espacio amplio
-TRAIL_PCT_2         = 0.04  # fase 2: SL = peak × (1 - 4%) — más ajustado
-TRAIL_PCT_3         = 0.025 # fase 3: SL = peak × (1 - 2.5%) — proteger ganancias
+# % del pico (suelo del SL)
+TRAIL_PCT_1         = 0.05  # fase 1: SL no baja de peak × 0.95
+TRAIL_PCT_2         = 0.035 # fase 2: SL no baja de peak × 0.965
+TRAIL_PCT_3         = 0.02  # fase 3: SL no baja de peak × 0.98
+
+# % de ganancia protegida (techo del SL — garantiza capturar parte del movimiento)
+TRAIL_GAIN_1        = 0.40  # fase 1: capturar al menos 40% de (peak-entry)
+TRAIL_GAIN_2        = 0.60  # fase 2: capturar al menos 60% de (peak-entry)
+TRAIL_GAIN_3        = 0.80  # fase 3: capturar al menos 80% de (peak-entry)
 
 # Costes (backtest)
 COMMISSION_PCT = 0.10
@@ -386,11 +392,12 @@ def compute_indicators(df):
 
     vol_pct = vol_percentile(vol20)
 
-    # EMA largo plazo
-    ema50 = c.ewm(span=TREND_EMA, adjust=False).mean()
-    ema8  = c.ewm(span=8,  adjust=False).mean()
-    ema21 = c.ewm(span=21, adjust=False).mean()
-    ema13 = c.ewm(span=13, adjust=False).mean()  # para trailing intermedio
+    # EMAs
+    ema200 = c.ewm(span=200, adjust=False).mean()  # filtro de regimen
+    ema50  = c.ewm(span=TREND_EMA, adjust=False).mean()
+    ema8   = c.ewm(span=8,  adjust=False).mean()
+    ema21  = c.ewm(span=21, adjust=False).mean()
+    ema13  = c.ewm(span=13, adjust=False).mean()
 
     # Volumen — percentil móvil de 252 días
     def vol_rank(vseries, window=252):
@@ -423,6 +430,7 @@ def compute_indicators(df):
         'ema13':    ema13.values.astype(float),
         'ema21':    ema21.values.astype(float),
         'ema50':    ema50.values.astype(float),
+        'ema200':   ema200.values.astype(float),
         'dates':    df.index,
         'n':        len(c),
     }
@@ -452,7 +460,7 @@ def check_panic(ind, i):
     return vp >= PANIC_VOL_PERCENTILE
 
 
-def check_trend(ind, i):
+def check_trend(ind, i, ticker=''):
     """
     Condición 1: ¿Está el activo en tendencia alcista?
 
@@ -479,13 +487,24 @@ def check_trend(ind, i):
     price_change = price_now - price_then
     atr_threshold = atr_now * TREND_ATR_MULTIPLE * (TREND_BARS / 14)
     strong_trend = price_change > atr_threshold
-    above_ema    = price_now > ema50_now
+    above_ema50  = price_now > ema50_now
 
-    ok = strong_trend and above_ema
+    # Filtro de regimen: precio debe estar sobre EMA200
+    # Esto elimina entradas en tendencias que ya estan muertas
+    # (como comprar momentum alcista en mercado bajista 2022)
+    # Activos defensivos/inversos estan exentos
+    defensivos = {"VIXL.DE","DXS3.DE","3QQS.DE","DBPK.DE",
+                  "VZLD.DE","PHAG.DE","IDTL.DE","IBTA.DE",
+                  "XLP","XLU","ZPRS.DE","ZPDV.DE"}
+    es_defensivo = ticker in defensivos
+    ema200_now   = _v(ind, 'ema200', i)
+    above_ema200 = es_defensivo or (price_now > ema200_now and ema200_now > 0)
+
+    ok = strong_trend and above_ema50 and above_ema200
     return ok, {
         'price_change_pct': round((price_change / price_then * 100), 1),
         'atr_threshold_pct': round((atr_threshold / price_then * 100), 1),
-        'above_ema50': above_ema,
+        'above_ema50': above_ema50,
         'ema50': round(ema50_now, 2),
     }
 
@@ -547,12 +566,16 @@ def check_breakout(ind, i):
     # Máximo de las barras anteriores (sin incluir la barra actual)
     prev_high = float(np.max(ind['h'][i - COMPRESSION_BARS:i]))
 
-    # Breakout: HIGH supera el máximo de compresión
-    # Pero CLOSE debe estar por encima del 50% del rango diario
-    # (filtro de cierre — evita falsas roturas que cierran en el suelo)
+    # Breakout debe superar el maximo por al menos 0.3xATR
+    # Filtra roturas marginales sin fuerza real (los trades R<1 suelen
+    # entrar con breakouts de pennies por encima del maximo).
+    atr_now      = _v(ind, 'atr14', i)
+    min_breakout = prev_high + 0.30 * atr_now
+
+    # CLOSE en el 40% superior del rango diario
     daily_range = _v(ind, 'h', i) - _v(ind, 'lo', i)
     close_pct   = (close - _v(ind, 'lo', i)) / daily_range if daily_range > 0 else 0.5
-    broke_out   = high > prev_high and close_pct >= 0.4
+    broke_out   = high >= min_breakout and close_pct >= 0.4
     strong_vol  = vr >= BREAKOUT_VOL_PERCENTILE
 
     ok = broke_out and strong_vol
@@ -574,12 +597,36 @@ def compute_levels(ind, i, comp_detail, ticker=""):
     comp_low = comp_detail.get('comp_low', entry * 0.95)
 
     sl  = comp_low * (1 - SL_BUFFER_PCT / 100)
-    # SL máximo: 8% para activos de alta volatilidad, 15% para el resto
-    max_sl_pct = 0.08 if ticker in HIGH_VOL_ASSETS else 0.15
-    sl  = max(sl, entry * (1 - max_sl_pct))
+
+    # Filtro ATR/riesgo: rechazar si el activo no tiene suficiente
+    # velocidad para llegar a 1R en tiempo razonable.
+    #
+    # Ratio = ATR_diario / riesgo_pct
+    # Si ratio < 0.40: necesitas >2.5 dias de movimiento perfecto para 1R
+    # Los trades malos (R_pico<1) tienen ratio medio de 0.19
+    # Los trades buenos (R_pico>2) tienen ratio medio de 0.43
+    #
+    # Adicionalmente: SL absoluto max 10% — si la compresion tiene
+    # rango de 10%+ no era compresion real, era volatilidad normal.
+    atr_entry = float(ind['atr14'][i]) if 'atr14' in ind else 0
+    risk_pct  = (entry - sl) / entry
+    max_sl_pct = 0.10 if ticker in HIGH_VOL_ASSETS else 0.08
+
+    if risk_pct > max_sl_pct:
+        return None, None, None, None  # riesgo absoluto excesivo
+
+    if atr_entry > 0:
+        atr_ratio = (atr_entry / entry) / risk_pct  # ATR_pct / riesgo_pct
+        min_ratio = 0.35 if ticker in HIGH_VOL_ASSETS else 0.40
+        if atr_ratio < min_ratio:
+            return None, None, None, None  # activo demasiado lento para el riesgo
     risk = entry - sl
 
     if risk <= 0:
+        return None, None, None, None
+    # Riesgo mínimo: 1.5% — si el SL está muy cerca es una señal débil
+    # y el TP queda demasiado cerca para que valga la pena entrar
+    if risk / entry < 0.015:
         return None, None, None, None
 
     tp   = entry + risk * TP_R_MULTIPLE
@@ -617,15 +664,16 @@ def backtest(ticker, ind):
         # ── Gestión del trade abierto ────────────────────────────────
         if in_trade:
             high_today = _v(ind, 'h', i)    # HIGH intradía real
-            atr_today  = _v(ind, 'atr14', i)  # ATR del día
-            peak       = max(peak, high_today)  # pico histórico HIGH
+            low_today  = _v(ind, 'lo', i)   # LOW intradía real
+            atr_today  = _v(ind, 'atr14', i)
             held       = i - entry_i
             risk       = entry_price - sl_initial
             if risk <= 0 or atr_today <= 0:
                 in_trade = False
                 continue
 
-            # R alcanzado usando HIGH (pico intradía real — no el close)
+            # pnl_r_peak usa el peak del día ANTERIOR (ya fijado)
+            # Así el trailing del día de hoy protege contra el LOW de hoy.
             pnl_r_peak  = (peak        - entry_price) / risk
             pnl_r_today = (high_today  - entry_price) / risk
             pnl_r_close = (price       - entry_price) / risk
@@ -648,20 +696,48 @@ def backtest(ticker, ind):
             # Fase 3 (3R): SL = $116 × 0.975 = $113.1 → +13.1% desde entrada
 
             if pnl_r_peak >= TRAIL_ACT_1_R:
-                trail = peak * (1 - TRAIL_PCT_1)
+                # SL = máximo entre:
+                # (a) peak × (1-PCT): suelo absoluto del SL
+                # (b) entry + GAIN × (peak-entry): % de ganancia protegida
+                gain = peak - entry_price
+                trail = max(
+                    peak * (1 - TRAIL_PCT_1),
+                    entry_price + TRAIL_GAIN_1 * gain
+                )
                 sl = max(sl, trail)
 
             if pnl_r_peak >= TRAIL_ACT_2_R:
-                trail = peak * (1 - TRAIL_PCT_2)
+                gain = peak - entry_price
+                trail = max(
+                    peak * (1 - TRAIL_PCT_2),
+                    entry_price + TRAIL_GAIN_2 * gain
+                )
                 sl = max(sl, trail)
 
             if pnl_r_peak >= TRAIL_ACT_3_R:
-                trail = peak * (1 - TRAIL_PCT_3)
+                gain = peak - entry_price
+                trail = max(
+                    peak * (1 - TRAIL_PCT_3),
+                    entry_price + TRAIL_GAIN_3 * gain
+                )
                 sl = max(sl, trail)
 
+            if pnl_r_peak >= 4.0:
+                # Fase 4: trade excepcional — proteger 87% del pico
+                # Deja solo un 1.5% de margen desde el pico
+                gain = peak - entry_price
+                trail = max(
+                    peak * (1 - 0.015),
+                    entry_price + 0.87 * gain
+                )
+                sl = max(sl, trail)
+
+            # Actualizar peak DESPUÉS de calcular el trailing
+            # Así el trailing de hoy protege contra el LOW de hoy
+            peak = max(peak, high_today)
+
             # ── EVALUAR SALIDA ───────────────────────────────────────
-            # Importante: usar LOW del día para SL (el precio bajó hasta ahí)
-            low_today = _v(ind, 'lo', i)
+            # Usar LOW del día para SL (el precio bajó hasta ahí intradía)
             reason = None
             if low_today <= sl:
                 reason = 'SL'
@@ -707,7 +783,7 @@ def backtest(ticker, ind):
             continue
 
         # Condición 1: Tendencia
-        trend_ok, trend_d = check_trend(ind, i)
+        trend_ok, trend_d = check_trend(ind, i, ticker)
         if not trend_ok:
             continue
 
@@ -956,7 +1032,7 @@ def get_today_signal(ticker, ind):
         return None
 
     panic = check_panic(ind, i)
-    trend_ok, trend_d = check_trend(ind, i)
+    trend_ok, trend_d = check_trend(ind, i, ticker)
     comp_ok,  comp_d  = check_compression(ind, i)
     bo_ok,    bo_d    = check_breakout(ind, i)
 
