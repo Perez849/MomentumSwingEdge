@@ -231,34 +231,35 @@ SLIPPAGE_PCT   = 0.05
 IS_RATIO = 0.65
 
 # ════════════════════════════════════════════════════════════════════
-# MEAN REVERSION — parámetros estrategia complementaria
+# PULLBACK EN TENDENCIA — parámetros estrategia complementaria
 # ════════════════════════════════════════════════════════════════════
-# Lógica: activos con tendencia fuerte (EMA50+EMA200) que sufren
-# una caída brusca temporal (oversold RSI3 ≤ 25) tienen probabilidad
-# alta de recuperar. Edge documentado: rebote de mean reversion
-# en activos que siguen siendo fundamentalmente alcistas.
+# Lógica: activos Tier1/Tier2 en tendencia alcista estructural
+# (EMA20 > EMA50 > EMA200) que retroceden ordenadamente hasta tocar
+# la EMA20 o EMA50. El retroceso debe ser silencioso (volumen bajo)
+# — señal de falta de vendedores reales, no distribución.
+# Entrada en el toque de soporte dinámico con cierre recuperando EMA.
 #
-# Solo opera en Tier1+Tier2 — los activos con tendencia más probada.
-# Universo reducido porque necesitamos tendencia REAL, no cualquier activo.
+# Complementa al momentum breakout:
+#   - Breakout: captura el inicio de la tendencia
+#   - Pullback: captura la continuación (segunda entrada)
+# Filosóficamente coherentes — ambos requieren tendencia alcista.
 #
-# Capital compartido con momentum — compiten por el mismo pool.
-# Pero el sistema controla que no se abra si ya hay trade momentum abierto
-# en el mismo ticker (no acumular en el mismo activo).
+# Solo opera en Tier1 + Tier2. Capital compartido con momentum.
+# No acumula si ya hay trade momentum abierto en el mismo ticker.
 
-MR_RSI_PERIOD       = 3       # RSI ultra-corto — muy sensible a caídas bruscas
-MR_RSI_THRESHOLD    = 20      # oversold extremo (RSI3 ≤ 20) — solo dips reales
-MR_DROP_ATR         = 1.5     # la caída desde el máximo reciente debe ser ≥ 1.5×ATR
-MR_DROP_BARS        = 5       # ventana para medir la caída (últimos 5 días)
-MR_PANIC_MAX        = 90      # más permisivo que momentum (80) — el pánico moderado
-                               # es exactamente cuando aparecen los mejores rebotes
-MR_TP_R             = 2.0     # TP a 2R — objetivo rápido, no buscar tendencia
-MR_MAX_HOLD         = 10      # salir en 10 días máximo — el rebote es corto
-MR_SL_BARS          = 5       # SL = mínimo de los últimos 5 días - buffer
-MR_SL_BUFFER        = 0.003   # buffer 0.3% bajo el mínimo reciente
-MR_POSITION_SIZE    = 0.08    # 8% del capital — menor que momentum (10-20%)
-                               # Edge menos probado → sizing más conservador
-# Universo MR: solo Tier1 + Tier2 (activos con tendencia demostrada)
-# No operar MR en Tier3 — sin tendencia fuerte el rebote no tiene base
+PB_EMA_FAST         = 20      # EMA rápida — soporte dinámico principal
+PB_EMA_MID          = 50      # EMA media — soporte si tendencia muy fuerte
+PB_TOUCH_BUFFER     = 0.005   # precio dentro del 0.5% de la EMA = "toque"
+PB_VOL_MAX_RANK     = 45      # volumen ≤ percentil 45 durante retroceso (silencioso)
+PB_TREND_MIN_BARS   = 10      # EMA20>EMA50>EMA200 durante al menos 10 días
+PB_PANIC_MAX        = 80      # mismo filtro pánico que momentum
+PB_TP_R             = 2.5     # TP a 2.5R — más recorrido que MR (continuación)
+PB_MAX_HOLD         = 20      # máx 20 días — pullbacks resuelven rápido
+PB_SL_BUFFER        = 0.004   # buffer 0.4% bajo el mínimo del retroceso
+PB_MIN_RISK         = 0.008   # riesgo mínimo 0.8% para evitar entradas sucias
+PB_MAX_RISK         = 0.10    # riesgo máximo 10%
+PB_POSITION_SIZE    = 0.10    # 10% del capital — mismo que Tier3 momentum
+# Universo PB: solo Tier1 + Tier2 (activos con tendencia demostrada)
 
 # ════════════════════════════════════════════════════════════════════
 # INDICADORES
@@ -304,6 +305,7 @@ def compute_indicators(df):
     # EMAs
     ema200 = c.ewm(span=200, adjust=False).mean()  # filtro de regimen
     ema50  = c.ewm(span=TREND_EMA, adjust=False).mean()
+    ema20  = c.ewm(span=20, adjust=False).mean()   # soporte dinámico pullback
     ema8   = c.ewm(span=8,  adjust=False).mean()
     ema21  = c.ewm(span=21, adjust=False).mean()
     ema13  = c.ewm(span=13, adjust=False).mean()
@@ -350,6 +352,7 @@ def compute_indicators(df):
         'ema21':    ema21.values.astype(float),
         'ema50':    ema50.values.astype(float),
         'ema200':   ema200.values.astype(float),
+        'ema20':    ema20.values.astype(float),
         'rsi3':     rsi3.values.astype(float),  # para mean reversion
         'dates':    df.index,
         'n':        len(c),
@@ -751,19 +754,19 @@ def backtest(ticker, ind):
 
 def backtest_mr(ticker, ind, momentum_open_dates=None):
     """
-    Estrategia complementaria: Mean Reversion en activos con tendencia fuerte.
+    Estrategia complementaria: Pullback en Tendencia.
 
-    IDEA: cuando un activo Tier1/Tier2 con tendencia alcista cae bruscamente
-    (RSI3 <= 25 + caida >= 1.5xATR en 5 dias) hay edge estadístico de rebote.
-    El activo sigue siendo fundamentalmente alcista — es ruido, no cambio.
+    IDEA: activos Tier1/Tier2 con tendencia alcista estructural
+    (EMA20 > EMA50 > EMA200) que retroceden ordenadamente hasta tocar
+    la EMA20 o EMA50 con volumen bajo (sin distribución real).
+    El retroceso es una segunda oportunidad de entrada en tendencia,
+    no una reversión. El cierre debe recuperar la EMA el día del toque.
 
-    Solo opera en Tier1 + Tier2. Capital compartido con momentum.
-    No acumula en el mismo ticker si ya hay trade momentum abierto.
+    Complementa al breakout: éste captura el inicio, el pullback
+    captura la continuación. Filosóficamente coherentes.
 
-    momentum_open_dates: set de (ticker, date_str) con trades momentum abiertos
-                         para evitar doble posición en el mismo activo.
+    Solo opera Tier1 + Tier2. No acumula si hay momentum abierto.
     """
-    # Solo Tier1 + Tier2 para MR
     if ticker not in TIER1_ASSETS and ticker not in TIER2_ASSETS:
         return [], {}
 
@@ -772,15 +775,18 @@ def backtest_mr(ticker, ind, momentum_open_dates=None):
 
     n      = ind['n']
     trades = []
-    diag   = {'no_trend': 0, 'no_oversold': 0, 'no_drop': 0,
-              'panic': 0, 'bad_levels': 0, 'momentum_open': 0}
+    diag   = {'no_trend': 0, 'no_pullback': 0, 'no_touch': 0,
+              'panic': 0, 'bad_levels': 0, 'momentum_open': 0, 'vol_high': 0}
 
     in_trade    = False
     entry_price = sl = tp = peak = 0.0
     entry_i     = 0
     entry_date  = None
 
-    min_bars = max(MR_DROP_BARS + MR_RSI_PERIOD + 10, 270)
+    min_bars = max(PB_TREND_MIN_BARS + 220, 270)
+
+    def ema_series(key, i):
+        return _v(ind, key, i)
 
     for i in range(min_bars, n):
         price = _v(ind, 'c', i)
@@ -798,10 +804,9 @@ def backtest_mr(ticker, ind, momentum_open_dates=None):
                 in_trade = False
                 continue
 
-            # Trailing simple para MR: solo proteger peak una vez alcanzado TP/2
-            pnl_r_today = (high_today - entry_price) / risk
-            if pnl_r_today >= 1.0 and sl < entry_price:
-                # Break-even cuando llega a 1R
+            # Break-even a 1R
+            pnl_r = (high_today - entry_price) / risk
+            if pnl_r >= 1.0 and sl < entry_price:
                 sl = max(sl, entry_price * 1.001)
 
             peak = max(peak, high_today)
@@ -811,16 +816,11 @@ def backtest_mr(ticker, ind, momentum_open_dates=None):
                 reason = 'SL'
             elif high_today >= tp:
                 reason = 'TP'
-            elif held >= MR_MAX_HOLD:
+            elif held >= PB_MAX_HOLD:
                 reason = 'T'
 
             if reason:
-                if reason == 'SL':
-                    raw_exit = sl
-                elif reason == 'TP':
-                    raw_exit = tp
-                else:
-                    raw_exit = price
+                raw_exit   = sl if reason == 'SL' else (tp if reason == 'TP' else price)
                 exit_price = raw_exit * (1 - (COMMISSION_PCT + SLIPPAGE_PCT) / 100)
                 pnl_net    = (exit_price - entry_price) / entry_price * 100
                 r_achieved = round((peak - entry_price) / risk, 2) if risk > 0 else 0
@@ -838,84 +838,115 @@ def backtest_mr(ticker, ind, momentum_open_dates=None):
                     'reason':      reason,
                     'peak_pnl':    round((peak - entry_price) / entry_price * 100, 2),
                     'r_achieved':  r_achieved,
-                    'strategy':    'MR',
+                    'strategy':    'MR',   # mantener etiqueta 'MR' para compatibilidad dashboard
                 })
                 in_trade = False
             continue
 
-        # ── Evaluar nueva entrada MR ─────────────────────────────────
+        # ── Evaluar nueva entrada Pullback ───────────────────────────
 
         date_str = str(ind['dates'][i])[:10]
 
-        # No abrir si ya hay trade momentum en este ticker en esta fecha
+        # No abrir si hay trade momentum en este ticker hoy
         if (ticker, date_str) in momentum_open_dates:
             diag['momentum_open'] += 1
             continue
 
-        # Filtro pánico MR: más permisivo (90 vs 80 de momentum)
-        # El pánico moderado es exactamente cuando aparecen los rebotes
+        # Filtro pánico — igual que momentum
         vp = ind['vol_pct'][i]
-        if not np.isnan(vp) and vp >= MR_PANIC_MAX:
+        if not np.isnan(vp) and vp >= PB_PANIC_MAX:
             diag['panic'] += 1
             continue
 
-        # Condición 1: tendencia alcista intacta
-        # EMA50 + EMA200 — el activo sigue siendo fundamentalmente alcista
-        price_now  = _v(ind, 'c', i)
-        ema50_now  = _v(ind, 'ema50', i)
+        # ── Condición 1: tendencia estructural alcista ───────────────
+        # EMA20 > EMA50 > EMA200 durante PB_TREND_MIN_BARS días consecutivos
+        ema20_now  = _v(ind, 'ema20',  i)
+        ema50_now  = _v(ind, 'ema50',  i)
         ema200_now = _v(ind, 'ema200', i)
-        if ema50_now <= 0 or ema200_now <= 0:
-            diag['no_trend'] += 1
-            continue
-        if price_now <= ema50_now or price_now <= ema200_now:
-            diag['no_trend'] += 1
-            continue
-        # EMA50 debe estar sobre EMA200 — tendencia estructural confirmada
-        if ema50_now <= ema200_now:
+
+        if ema20_now <= 0 or ema50_now <= 0 or ema200_now <= 0:
             diag['no_trend'] += 1
             continue
 
-        # Condición 2: oversold RSI3
-        rsi3_now = _v(ind, 'rsi3', i)
-        if rsi3_now <= 0 or rsi3_now > MR_RSI_THRESHOLD:
-            diag['no_oversold'] += 1
+        # Pendiente estructural confirmada
+        if not (ema20_now > ema50_now > ema200_now):
+            diag['no_trend'] += 1
             continue
 
-        # Condición 4 (nueva): volumen bajo en el día oversold
-        # Capitulación con volumen ALTO = pánico real que suele continuar.
-        # Dip comprable = caída silenciosa, sin vendedores masivos detrás.
+        # Precio sobre EMA200 — no operar en tendencia bajista macro
+        price_now = _v(ind, 'c', i)
+        if price_now < ema200_now * 0.995:
+            diag['no_trend'] += 1
+            continue
+
+        # Confirmar que la tendencia lleva al menos PB_TREND_MIN_BARS días
+        trend_ok_bars = 0
+        for j in range(i - PB_TREND_MIN_BARS, i):
+            e20 = _v(ind, 'ema20',  j)
+            e50 = _v(ind, 'ema50',  j)
+            e200= _v(ind, 'ema200', j)
+            if e20 > e50 > e200:
+                trend_ok_bars += 1
+        if trend_ok_bars < PB_TREND_MIN_BARS:
+            diag['no_trend'] += 1
+            continue
+
+        # ── Condición 2: precio en pullback (por debajo de EMA20 recientemente) ──
+        # El precio debe haber cruzado por debajo o tocado la EMA20 en los últimos
+        # 3 días, y el cierre de hoy debe estar por encima (recuperación)
+        touch_ema20 = False
+        touch_ema50 = False
+
+        for j in range(max(0, i-3), i+1):
+            lo_j  = _v(ind, 'lo',   j)
+            hi_j  = _v(ind, 'h',    j)
+            c_j   = _v(ind, 'c',    j)
+            e20_j = _v(ind, 'ema20', j)
+            e50_j = _v(ind, 'ema50', j)
+
+            # Toque EMA20: mínimo tocó la EMA20 (±0.5%) y cierre por encima
+            if e20_j > 0 and lo_j <= e20_j * (1 + PB_TOUCH_BUFFER) and c_j >= e20_j:
+                touch_ema20 = True
+            # Toque EMA50: más profundo — solo si EMA50 está ≥ 5% por encima de EMA200
+            if e50_j > 0 and e200_now > 0:
+                ema50_dist = (e50_j - e200_now) / e200_now
+                if ema50_dist >= 0.05 and lo_j <= e50_j * (1 + PB_TOUCH_BUFFER) and c_j >= e50_j:
+                    touch_ema50 = True
+
+        if not (touch_ema20 or touch_ema50):
+            diag['no_touch'] += 1
+            continue
+
+        # El cierre de hoy debe estar por encima de la EMA tocada
+        if touch_ema20 and price_now < ema20_now:
+            diag['no_pullback'] += 1
+            continue
+        if touch_ema50 and not touch_ema20 and price_now < ema50_now:
+            diag['no_pullback'] += 1
+            continue
+
+        # ── Condición 3: volumen bajo durante el retroceso (silencioso) ──
         vol_rank_now = ind['vol_rank'][i]
-        if not np.isnan(vol_rank_now) and vol_rank_now > 40:
-            diag['no_drop'] += 1  # reutilizamos contador de diagnóstico
+        if not np.isnan(vol_rank_now) and vol_rank_now > PB_VOL_MAX_RANK:
+            diag['vol_high'] += 1
             continue
 
-        # Condición 3: caida real >= 1.5xATR en los ultimos MR_DROP_BARS dias
-        atr_now   = _v(ind, 'atr14', i)
-        if atr_now <= 0:
-            diag['no_drop'] += 1
-            continue
-        recent_high = float(np.max(ind['h'][i - MR_DROP_BARS:i]))
-        drop        = recent_high - price_now
-        if drop < MR_DROP_ATR * atr_now:
-            diag['no_drop'] += 1
-            continue
-
-        # Niveles de entrada MR
+        # ── Niveles de entrada ───────────────────────────────────────
         entry_p = price_now * (1 + (COMMISSION_PCT + SLIPPAGE_PCT) / 100)
 
-        # SL = minimo de los ultimos MR_SL_BARS dias - buffer
-        recent_low = float(np.min(ind['lo'][i - MR_SL_BARS:i + 1]))
-        sl_p       = recent_low * (1 - MR_SL_BUFFER)
+        # SL: mínimo del retroceso (últimos 5 días) - buffer
+        recent_low = float(np.min(ind['lo'][i - 5:i + 1]))
+        sl_p       = recent_low * (1 - PB_SL_BUFFER)
 
         risk = entry_p - sl_p
-        if risk <= 0 or risk / entry_p < 0.005:  # riesgo minimo 0.5%
+        if risk <= 0 or risk / entry_p < PB_MIN_RISK:
             diag['bad_levels'] += 1
             continue
-        if risk / entry_p > 0.10:  # riesgo maximo 10%
+        if risk / entry_p > PB_MAX_RISK:
             diag['bad_levels'] += 1
             continue
 
-        tp_p = entry_p + risk * MR_TP_R
+        tp_p = entry_p + risk * PB_TP_R
 
         in_trade    = True
         entry_price = entry_p
@@ -1426,7 +1457,7 @@ canvas{display:block;width:100%!important}
     <div class="brand-mark">◈</div>
     <div>
       <div class="brand-name">Momentum Breakout Engine</div>
-      <div class="brand-sub">Momentum Breakout · Mean Reversion</div>
+      <div class="brand-sub">Momentum Breakout · Pullback en Tendencia</div>
     </div>
   </div>
   <div class="hdr-meta">
