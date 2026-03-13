@@ -1457,7 +1457,7 @@ canvas{display:block;width:100%!important}
     <div class="brand-mark">◈</div>
     <div>
       <div class="brand-name">Momentum Breakout Engine</div>
-      <div class="brand-sub">Momentum Breakout · Pullback en Tendencia</div>
+      <div class="brand-sub">Momentum Breakout</div>
     </div>
   </div>
   <div class="hdr-meta">
@@ -2064,23 +2064,9 @@ def main():
                   f"no_comp={d['no_comp']} no_bo={d['no_bo']} "
                   f"all3={d['all3']} bad_lvl={d['bad_levels']}")
 
-        # ── MEAN REVERSION: backtest complementario ────────────────
-        if ticker in TIER1_ASSETS or ticker in TIER2_ASSETS:
-            mo_set_is  = build_momentum_open_set(trades_is)
-            mo_set_oos = build_momentum_open_set(trades_oos)
-            mr_is_all, _ = backtest_mr(ticker, ind_is,  mo_set_is)
-            mr_full, _   = backtest_mr(ticker, ind_full, mo_set_oos)
-            mr_oos        = [t for t in mr_full if t['entry_date'] >= oos_start_str]
-            for t in mr_is_all: t['period'] = 'IS'
-            for t in mr_oos:    t['period'] = 'OOS'
-            if mr_oos:
-                m_mr_tick = compute_metrics(mr_oos)
-                wr_mr  = m_mr_tick['wr'] if m_mr_tick else 0
-                pf_mr  = m_mr_tick['pf'] if m_mr_tick else 0
-                col_mr = G if wr_mr >= 55 else (Y if wr_mr >= 45 else R)
-                print(f'   {DIM}MR:{len(mr_oos)}t {col_mr}WR={wr_mr:.0f}%{RST}{DIM} PF={pf_mr:.2f}{RST}')
-            all_is_mr.extend(mr_is_all)
-            all_oos_mr.extend(mr_oos)
+        # ── ESTRATEGIA COMPLEMENTARIA: desactivada ──────────────────
+        # Pendiente de investigación — solo momentum puro en producción
+        pass
 
         # ── SEÑALES DE HOY ───────────────────────────────────────────────
         sig = get_today_signal(ticker, ind)
