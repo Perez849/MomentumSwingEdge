@@ -1,6 +1,6 @@
 """
 ╔══════════════════════════════════════════════════════════════════════╗
-║  MOMENTUM BREAKOUT ENGINE  v1.0                                      ║
+║  MOMENTUM BREAKOUT ENGINE  v1.1                                      ║
 ║  Swing trading de alta convicción — una idea, bien ejecutada         ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║                                                                      ║
@@ -231,6 +231,36 @@ SLIPPAGE_PCT   = 0.05
 IS_RATIO = 0.65
 
 # ════════════════════════════════════════════════════════════════════
+# MEAN REVERSION — parámetros estrategia complementaria
+# ════════════════════════════════════════════════════════════════════
+# Lógica: activos con tendencia fuerte (EMA50+EMA200) que sufren
+# una caída brusca temporal (oversold RSI3 ≤ 25) tienen probabilidad
+# alta de recuperar. Edge documentado: rebote de mean reversion
+# en activos que siguen siendo fundamentalmente alcistas.
+#
+# Solo opera en Tier1+Tier2 — los activos con tendencia más probada.
+# Universo reducido porque necesitamos tendencia REAL, no cualquier activo.
+#
+# Capital compartido con momentum — compiten por el mismo pool.
+# Pero el sistema controla que no se abra si ya hay trade momentum abierto
+# en el mismo ticker (no acumular en el mismo activo).
+
+MR_RSI_PERIOD       = 3       # RSI ultra-corto — muy sensible a caídas bruscas
+MR_RSI_THRESHOLD    = 25      # oversold severo (RSI3 ≤ 25)
+MR_DROP_ATR         = 1.5     # la caída desde el máximo reciente debe ser ≥ 1.5×ATR
+MR_DROP_BARS        = 5       # ventana para medir la caída (últimos 5 días)
+MR_PANIC_MAX        = 90      # más permisivo que momentum (80) — el pánico moderado
+                               # es exactamente cuando aparecen los mejores rebotes
+MR_TP_R             = 2.0     # TP a 2R — objetivo rápido, no buscar tendencia
+MR_MAX_HOLD         = 10      # salir en 10 días máximo — el rebote es corto
+MR_SL_BARS          = 5       # SL = mínimo de los últimos 5 días - buffer
+MR_SL_BUFFER        = 0.003   # buffer 0.3% bajo el mínimo reciente
+MR_POSITION_SIZE    = 0.08    # 8% del capital — menor que momentum (10-20%)
+                               # Edge menos probado → sizing más conservador
+# Universo MR: solo Tier1 + Tier2 (activos con tendencia demostrada)
+# No operar MR en Tier3 — sin tendencia fuerte el rebote no tiene base
+
+# ════════════════════════════════════════════════════════════════════
 # INDICADORES
 # ════════════════════════════════════════════════════════════════════
 
@@ -294,6 +324,16 @@ def compute_indicators(df):
 
     vol_rank_arr = vol_rank(v)
 
+    # RSI ultra-corto (periodo 3) para mean reversion
+    # RSI3 <= 25 en activo con tendencia = oversold temporal, alta prob rebote
+    delta    = c.diff()
+    gain     = delta.clip(lower=0)
+    loss     = (-delta).clip(lower=0)
+    avg_gain = gain.ewm(span=MR_RSI_PERIOD, adjust=False).mean()
+    avg_loss = loss.ewm(span=MR_RSI_PERIOD, adjust=False).mean()
+    rs       = avg_gain / avg_loss.replace(0, np.nan)
+    rsi3     = 100 - (100 / (1 + rs))
+
     return {
         'c':        c.values.astype(float),
         'h':        h.values.astype(float),
@@ -303,13 +343,14 @@ def compute_indicators(df):
         'tr':       tr.values.astype(float),
         'atr14':    atr14.values.astype(float),
         'vol20':    vol20.values.astype(float),
-        'vol_pct':  vol_pct,           # percentil histórico de volatilidad
-        'vol_rank': vol_rank_arr,      # percentil histórico de volumen
+        'vol_pct':  vol_pct,           # percentil historico de volatilidad
+        'vol_rank': vol_rank_arr,      # percentil historico de volumen
         'ema8':     ema8.values.astype(float),
         'ema13':    ema13.values.astype(float),
         'ema21':    ema21.values.astype(float),
         'ema50':    ema50.values.astype(float),
         'ema200':   ema200.values.astype(float),
+        'rsi3':     rsi3.values.astype(float),  # para mean reversion
         'dates':    df.index,
         'n':        len(c),
     }
@@ -703,6 +744,198 @@ def backtest(ticker, ind):
     return trades, diag
 
 
+
+# ════════════════════════════════════════════════════════════════════
+# MEAN REVERSION — backtest complementario
+# ════════════════════════════════════════════════════════════════════
+
+def backtest_mr(ticker, ind, momentum_open_dates=None):
+    """
+    Estrategia complementaria: Mean Reversion en activos con tendencia fuerte.
+
+    IDEA: cuando un activo Tier1/Tier2 con tendencia alcista cae bruscamente
+    (RSI3 <= 25 + caida >= 1.5xATR en 5 dias) hay edge estadístico de rebote.
+    El activo sigue siendo fundamentalmente alcista — es ruido, no cambio.
+
+    Solo opera en Tier1 + Tier2. Capital compartido con momentum.
+    No acumula en el mismo ticker si ya hay trade momentum abierto.
+
+    momentum_open_dates: set de (ticker, date_str) con trades momentum abiertos
+                         para evitar doble posición en el mismo activo.
+    """
+    # Solo Tier1 + Tier2 para MR
+    if ticker not in TIER1_ASSETS and ticker not in TIER2_ASSETS:
+        return [], {}
+
+    if momentum_open_dates is None:
+        momentum_open_dates = set()
+
+    n      = ind['n']
+    trades = []
+    diag   = {'no_trend': 0, 'no_oversold': 0, 'no_drop': 0,
+              'panic': 0, 'bad_levels': 0, 'momentum_open': 0}
+
+    in_trade    = False
+    entry_price = sl = tp = peak = 0.0
+    entry_i     = 0
+    entry_date  = None
+
+    min_bars = max(MR_DROP_BARS + MR_RSI_PERIOD + 10, 270)
+
+    for i in range(min_bars, n):
+        price = _v(ind, 'c', i)
+        if price <= 0:
+            continue
+
+        # ── Gestión del trade abierto ────────────────────────────────
+        if in_trade:
+            high_today = _v(ind, 'h', i)
+            low_today  = _v(ind, 'lo', i)
+            held       = i - entry_i
+            risk       = entry_price - sl
+
+            if risk <= 0:
+                in_trade = False
+                continue
+
+            # Trailing simple para MR: solo proteger peak una vez alcanzado TP/2
+            pnl_r_today = (high_today - entry_price) / risk
+            if pnl_r_today >= 1.0 and sl < entry_price:
+                # Break-even cuando llega a 1R
+                sl = max(sl, entry_price * 1.001)
+
+            peak = max(peak, high_today)
+
+            reason = None
+            if low_today <= sl:
+                reason = 'SL'
+            elif high_today >= tp:
+                reason = 'TP'
+            elif held >= MR_MAX_HOLD:
+                reason = 'T'
+
+            if reason:
+                if reason == 'SL':
+                    raw_exit = sl
+                elif reason == 'TP':
+                    raw_exit = tp
+                else:
+                    raw_exit = price
+                exit_price = raw_exit * (1 - (COMMISSION_PCT + SLIPPAGE_PCT) / 100)
+                pnl_net    = (exit_price - entry_price) / entry_price * 100
+                r_achieved = round((peak - entry_price) / risk, 2) if risk > 0 else 0
+
+                trades.append({
+                    'ticker':      ticker,
+                    'entry_date':  str(entry_date)[:10],
+                    'exit_date':   str(ind['dates'][i])[:10],
+                    'entry_price': round(entry_price, 4),
+                    'exit_price':  round(exit_price, 4),
+                    'stop_loss':   round(sl, 4),
+                    'take_profit': round(tp, 4),
+                    'pnl':         round(pnl_net, 3),
+                    'days':        held,
+                    'reason':      reason,
+                    'peak_pnl':    round((peak - entry_price) / entry_price * 100, 2),
+                    'r_achieved':  r_achieved,
+                    'strategy':    'MR',
+                })
+                in_trade = False
+            continue
+
+        # ── Evaluar nueva entrada MR ─────────────────────────────────
+
+        date_str = str(ind['dates'][i])[:10]
+
+        # No abrir si ya hay trade momentum en este ticker en esta fecha
+        if (ticker, date_str) in momentum_open_dates:
+            diag['momentum_open'] += 1
+            continue
+
+        # Filtro pánico MR: más permisivo (90 vs 80 de momentum)
+        # El pánico moderado es exactamente cuando aparecen los rebotes
+        vp = ind['vol_pct'][i]
+        if not np.isnan(vp) and vp >= MR_PANIC_MAX:
+            diag['panic'] += 1
+            continue
+
+        # Condición 1: tendencia alcista intacta
+        # EMA50 + EMA200 — el activo sigue siendo fundamentalmente alcista
+        price_now  = _v(ind, 'c', i)
+        ema50_now  = _v(ind, 'ema50', i)
+        ema200_now = _v(ind, 'ema200', i)
+        if ema50_now <= 0 or ema200_now <= 0:
+            diag['no_trend'] += 1
+            continue
+        if price_now <= ema50_now or price_now <= ema200_now:
+            diag['no_trend'] += 1
+            continue
+
+        # Condición 2: oversold RSI3
+        rsi3_now = _v(ind, 'rsi3', i)
+        if rsi3_now <= 0 or rsi3_now > MR_RSI_THRESHOLD:
+            diag['no_oversold'] += 1
+            continue
+
+        # Condición 3: caida real >= 1.5xATR en los ultimos MR_DROP_BARS dias
+        atr_now   = _v(ind, 'atr14', i)
+        if atr_now <= 0:
+            diag['no_drop'] += 1
+            continue
+        recent_high = float(np.max(ind['h'][i - MR_DROP_BARS:i]))
+        drop        = recent_high - price_now
+        if drop < MR_DROP_ATR * atr_now:
+            diag['no_drop'] += 1
+            continue
+
+        # Niveles de entrada MR
+        entry_p = price_now * (1 + (COMMISSION_PCT + SLIPPAGE_PCT) / 100)
+
+        # SL = minimo de los ultimos MR_SL_BARS dias - buffer
+        recent_low = float(np.min(ind['lo'][i - MR_SL_BARS:i + 1]))
+        sl_p       = recent_low * (1 - MR_SL_BUFFER)
+
+        risk = entry_p - sl_p
+        if risk <= 0 or risk / entry_p < 0.005:  # riesgo minimo 0.5%
+            diag['bad_levels'] += 1
+            continue
+        if risk / entry_p > 0.10:  # riesgo maximo 10%
+            diag['bad_levels'] += 1
+            continue
+
+        tp_p = entry_p + risk * MR_TP_R
+
+        in_trade    = True
+        entry_price = entry_p
+        sl          = sl_p
+        tp          = tp_p
+        peak        = _v(ind, 'h', i)
+        entry_i     = i
+        entry_date  = ind['dates'][i]
+
+    return trades, diag
+
+
+def build_momentum_open_set(momentum_trades):
+    """
+    Construye un set de (ticker, date) para todas las fechas en que
+    cada trade momentum está abierto. Permite a MR evitar acumular
+    en el mismo activo que ya tiene posición momentum.
+    """
+    open_set = set()
+    for t in momentum_trades:
+        try:
+            from datetime import datetime, timedelta
+            entry = datetime.strptime(t['entry_date'], '%Y-%m-%d')
+            exit_ = datetime.strptime(t['exit_date'],  '%Y-%m-%d')
+            cur   = entry
+            while cur <= exit_:
+                open_set.add((t['ticker'], cur.strftime('%Y-%m-%d')))
+                cur += timedelta(days=1)
+        except Exception:
+            pass
+    return open_set
+
 # ════════════════════════════════════════════════════════════════════
 # MÉTRICAS POR TRADE (WR, PF, expectativa — independientes del portfolio)
 # ════════════════════════════════════════════════════════════════════
@@ -852,9 +1085,13 @@ def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=15.0):
             xi = n_days - 1
         xi = min(xi, n_days - 1)
         pnl_pct = t['pnl'] / 100.0
-        # Position sizing dinámico según calidad demostrada del activo
-        tkr = t.get('ticker', '')
-        if tkr in TIER1_ASSETS:
+        # Position sizing dinámico según estrategia y calidad del activo
+        tkr      = t.get('ticker', '')
+        strategy = t.get('strategy', 'MOM')
+        if strategy == 'MR':
+            # Mean reversion: sizing fijo 8% — edge menos probado
+            t_cap = initial_capital * MR_POSITION_SIZE
+        elif tkr in TIER1_ASSETS:
             t_cap = initial_capital * 0.20
         elif tkr in TIER2_ASSETS:
             t_cap = initial_capital * 0.15
@@ -1177,7 +1414,7 @@ canvas{display:block;width:100%!important}
     <div class="brand-mark">◈</div>
     <div>
       <div class="brand-name">Momentum Breakout Engine</div>
-      <div class="brand-sub">Tendencia · Compresión · Breakout</div>
+      <div class="brand-sub">Momentum Breakout · Mean Reversion</div>
     </div>
   </div>
   <div class="hdr-meta">
@@ -1540,7 +1777,7 @@ if(oos_trades.length){
     <div class="trades-tbl-wrap">
       <table class="tbl">
         <thead><tr>
-          <th>Ticker</th><th>Entrada</th><th>Salida</th>
+          <th>Ticker</th><th>Estrat.</th><th>Entrada</th><th>Salida</th>
           <th>$ Entrada</th><th>$ Salida</th>
           <th>P&L</th><th>Pico</th><th>R máx</th><th>Días</th><th>Motivo</th>
         </tr></thead>
@@ -1548,6 +1785,9 @@ if(oos_trades.length){
           const win=t.pnl>=0;
           return`<tr>
             <td style="font-weight:600;font-family:var(--mono)">${t.ticker}</td>
+            <td><span style="font-family:var(--mono);font-size:.58rem;padding:.1rem .3rem;border-radius:4px;${
+              t.strategy==='MR'?'background:rgba(99,102,241,.15);color:#818cf8':'background:rgba(6,214,160,.1);color:var(--safe)'
+            }">${t.strategy||'MOM'}</span></td>
             <td>${t.entry_date}</td><td>${t.exit_date}</td>
             <td>$${t.entry_price?.toFixed(2)}</td>
             <td>$${t.exit_price?.toFixed(2)}</td>
@@ -1693,8 +1933,8 @@ function drawLineChart(id,datasets,opts={}){
 
 def main():
     print(f"\n{BOLD}{'═'*65}{RST}")
-    print(f"{BOLD}{C}  ◈  MOMENTUM BREAKOUT ENGINE  v1.0{RST}")
-    print(f"{DIM}  Tendencia · Compresión · Breakout — tres condiciones binarias{RST}")
+    print(f"{BOLD}{C}  ◈  MOMENTUM BREAKOUT ENGINE  v1.1{RST}")
+    print(f"{DIM}  Momentum Breakout + Mean Reversion — dos estrategias complementarias{RST}")
     print(f"{BOLD}{'═'*65}{RST}\n")
 
     # ── Descargar datos ──────────────────────────────────────────────
@@ -1702,6 +1942,8 @@ def main():
 
     all_is_trades  = []
     all_oos_trades = []
+    all_is_mr      = []   # trades mean reversion IS
+    all_oos_mr     = []   # trades mean reversion OOS
     all_signals    = {}
 
     for ticker, name in UNIVERSE.items():
@@ -1779,7 +2021,25 @@ def main():
                   f"no_comp={d['no_comp']} no_bo={d['no_bo']} "
                   f"all3={d['all3']} bad_lvl={d['bad_levels']}")
 
-        # ── SEÑALES DE HOY ───────────────────────────────────────────
+        # ── MEAN REVERSION: backtest complementario ────────────────
+        if ticker in TIER1_ASSETS or ticker in TIER2_ASSETS:
+            mo_set_is  = build_momentum_open_set(trades_is)
+            mo_set_oos = build_momentum_open_set(trades_oos)
+            mr_is_all, _ = backtest_mr(ticker, ind_is,  mo_set_is)
+            mr_full, _   = backtest_mr(ticker, ind_full, mo_set_oos)
+            mr_oos        = [t for t in mr_full if t['entry_date'] >= oos_start_str]
+            for t in mr_is_all: t['period'] = 'IS'
+            for t in mr_oos:    t['period'] = 'OOS'
+            if mr_oos:
+                m_mr_tick = compute_metrics(mr_oos)
+                wr_mr  = m_mr_tick['wr'] if m_mr_tick else 0
+                pf_mr  = m_mr_tick['pf'] if m_mr_tick else 0
+                col_mr = G if wr_mr >= 55 else (Y if wr_mr >= 45 else R)
+                print(f'   {DIM}MR:{len(mr_oos)}t {col_mr}WR={wr_mr:.0f}%{RST}{DIM} PF={pf_mr:.2f}{RST}')
+            all_is_mr.extend(mr_is_all)
+            all_oos_mr.extend(mr_oos)
+
+        # ── SEÑALES DE HOY ───────────────────────────────────────────────
         sig = get_today_signal(ticker, ind)
         if sig:
             all_signals[ticker] = sig
@@ -1787,13 +2047,28 @@ def main():
     # ── Métricas globales ────────────────────────────────────────────
     m_is_global  = compute_metrics(all_is_trades)
     m_oos_global = compute_metrics(all_oos_trades)
+    m_mr_oos     = compute_metrics(all_oos_mr)
+    all_is_combined  = all_is_trades  + all_is_mr
+    all_oos_combined = all_oos_trades + all_oos_mr
+    m_is_combined    = compute_metrics(all_is_combined)
+    m_oos_combined   = compute_metrics(all_oos_combined)
 
-    # Portfolio simulation — equity día a día con posiciones paralelas
-    # 10% del capital por posición = máximo 10 posiciones simultáneas con el 100%
-    port_is  = portfolio_simulate(all_is_trades,  position_size_pct=15.0)
-    port_oos = portfolio_simulate(all_oos_trades, position_size_pct=15.0)
+    # Portfolio simulation con trades combinados momentum+MR
+    port_is  = portfolio_simulate(all_is_combined,  position_size_pct=15.0)
+    port_oos = portfolio_simulate(all_oos_combined, position_size_pct=15.0)
 
     # Añadir métricas de portfolio a los dicts globales
+    if m_is_combined and port_is:
+        m_is_combined['total_pct'] = port_is['total_pct']
+        m_is_combined['max_dd']    = port_is['max_dd']
+        m_is_combined['sharpe']    = port_is['sharpe']
+        m_is_combined['cagr']      = port_is['cagr']
+    if m_oos_combined and port_oos:
+        m_oos_combined['total_pct'] = port_oos['total_pct']
+        m_oos_combined['max_dd']    = port_oos['max_dd']
+        m_oos_combined['sharpe']    = port_oos['sharpe']
+        m_oos_combined['cagr']      = port_oos['cagr']
+    # También actualizar global para compatibilidad con dashboard
     if m_is_global and port_is:
         m_is_global['total_pct'] = port_is['total_pct']
         m_is_global['max_dd']    = port_is['max_dd']
@@ -1806,8 +2081,8 @@ def main():
         m_oos_global['cagr']      = port_oos['cagr']
 
     # Períodos
-    is_dates  = sorted([t['entry_date'] for t in all_is_trades])
-    oos_dates = sorted([t['entry_date'] for t in all_oos_trades])
+    is_dates  = sorted([t['entry_date'] for t in all_is_combined])
+    oos_dates = sorted([t['entry_date'] for t in all_oos_combined])
     is_period  = f"{is_dates[0]} → {is_dates[-1]}"  if is_dates  else "—"
     oos_period = f"{oos_dates[0]} → {oos_dates[-1]}" if oos_dates else "—"
 
@@ -1818,13 +2093,13 @@ def main():
         first = dt.strptime(oos_dates[0],  "%Y-%m-%d")
         last  = dt.strptime(oos_dates[-1], "%Y-%m-%d")
         months = max((last - first).days / 30, 1)
-        sigs_per_month = round(len(all_oos_trades) / months, 1)
+        sigs_per_month = round(len(all_oos_combined) / months, 1)
 
     # Benchmark SPY — serie diaria real, mismo rango que el portfolio OOS
     benchmark = None
     try:
         port_start = oos_dates[0] if oos_dates else None
-        port_end   = max(t['exit_date'] for t in all_oos_trades) if all_oos_trades else None
+        port_end   = max(t['exit_date'] for t in all_oos_combined) if all_oos_combined else None
         if port_start and port_end:
             spy = yf.download("SPY", start=port_start, end=port_end,
                               auto_adjust=True, progress=False)
@@ -1864,13 +2139,23 @@ def main():
         print(f"  {lbl:<22} {fmt.format(vi)+suf if vi is not None else '—':>10} "
               f"{col}{fmt.format(vo)+suf if vo is not None else '—':>10}{RST}")
 
-    _row("Trades",           m_is_global, m_oos_global, 'n',         "{:.0f}")
-    _row("Win Rate",         m_is_global, m_oos_global, 'wr',        "{:.1f}", "%")
-    _row("Profit Factor",    m_is_global, m_oos_global, 'pf',        "{:.2f}")
-    _row("Sharpe",           m_is_global, m_oos_global, 'sharpe',    "{:.2f}")
-    _row("Max Drawdown",     m_is_global, m_oos_global, 'max_dd',    "{:.1f}", "%")
-    _row("Expectativa/trade",m_is_global, m_oos_global, 'expectancy',"{:.3f}", "%")
-    _row("Total P&L",        m_is_global, m_oos_global, 'total_pct', "{:.1f}", "%")
+    print(f"  {DIM}── Momentum + Mean Reversion (combinado) ───────────{RST}")
+    _row("Trades",           m_is_combined, m_oos_combined, 'n',         "{:.0f}")
+    _row("Win Rate",         m_is_combined, m_oos_combined, 'wr',        "{:.1f}", "%")
+    _row("Profit Factor",    m_is_combined, m_oos_combined, 'pf',        "{:.2f}")
+    _row("Sharpe",           m_is_combined, m_oos_combined, 'sharpe',    "{:.2f}")
+    _row("Max Drawdown",     m_is_combined, m_oos_combined, 'max_dd',    "{:.1f}", "%")
+    _row("Expectativa/trade",m_is_combined, m_oos_combined, 'expectancy',"{:.3f}", "%")
+    _row("Total P&L",        m_is_combined, m_oos_combined, 'total_pct', "{:.1f}", "%")
+    print(f"  {DIM}── Solo Momentum ───────────────────────────────────{RST}")
+    _row("  Trades MOM",     m_is_global,   m_oos_global,   'n',   "{:.0f}")
+    _row("  WR MOM",         m_is_global,   m_oos_global,   'wr',  "{:.1f}", "%")
+    _row("  PF MOM",         m_is_global,   m_oos_global,   'pf',  "{:.2f}")
+    if m_mr_oos:
+        print(f"  {DIM}── Solo Mean Reversion (OOS) ────────────────────────{RST}")
+        print(f"  {'  Trades MR':<22} {'---':>10} {m_mr_oos['n']:>10.0f}")
+        print(f"  {'  WR MR':<22} {'---':>10} {m_mr_oos['wr']:>10.1f}%")
+        print(f"  {'  PF MR':<22} {'---':>10} {m_mr_oos['pf']:>10.2f}")
 
     if benchmark:
         print(f"\n  Benchmark SPY (mismo período OOS): "
@@ -1886,8 +2171,8 @@ def main():
 
     # Veredicto
     print(f"\n{BOLD}{'═'*65}{RST}")
-    if m_oos_global:
-        wr = m_oos_global['wr']; pf = m_oos_global['pf']; sh = m_oos_global['sharpe']
+    if m_oos_combined:
+        wr = m_oos_combined['wr']; pf = m_oos_combined['pf']; sh = m_oos_combined['sharpe']
         if wr >= 55 and pf >= 1.3 and sh >= 0.5:
             print(f"\n  {G}{BOLD}✅ SISTEMA VÁLIDO — edge real demostrado{RST}")
         elif wr >= 50 and pf >= 1.1:
@@ -1916,7 +2201,9 @@ def main():
         "benchmark":     benchmark,
         "sigs_per_month": sigs_per_month,
         "signals":       all_signals,
-        "oos_trades":    all_oos_trades,
+        "oos_trades":    all_oos_combined,
+        "oos_trades_mr": all_oos_mr,
+        "mr_metrics_oos": m_mr_oos,
         "params": {
             "COMPRESSION_BARS":        COMPRESSION_BARS,
             "TREND_BARS":              TREND_BARS,
