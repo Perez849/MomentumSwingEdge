@@ -1,7 +1,7 @@
 """
 ╔══════════════════════════════════════════════════════════════════════╗
-║  MOMENTUM BREAKOUT ENGINE  v2.0                                      ║
-║  Swing trading de alta convicción — trailing mejorado                ║
+║  MOMENTUM BREAKOUT ENGINE  v1.1                                      ║
+║  Swing trading de alta convicción — una idea, bien ejecutada         ║
 ╠══════════════════════════════════════════════════════════════════════╣
 ║                                                                      ║
 ║  LA IDEA (documentada en literatura desde 1993):                     ║
@@ -219,9 +219,9 @@ TRAIL_PCT_2         = 0.035 # fase 2: SL no baja de peak × 0.965
 TRAIL_PCT_3         = 0.02  # fase 3: SL no baja de peak × 0.98
 
 # % de ganancia protegida (floor — garantiza capturar parte del movimiento)
-TRAIL_GAIN_1        = 0.45  # ▲ fase 1: capturar al menos 45% (antes 40%)
-TRAIL_GAIN_2        = 0.60  # ▲ fase 2: capturar al menos 60% (antes 55%)
-TRAIL_GAIN_3        = 0.78  # ▲ fase 3: capturar al menos 78% (antes 75%)
+TRAIL_GAIN_1        = 0.50  # ▲ fase 1: capturar al menos 50% (antes 40%)
+TRAIL_GAIN_2        = 0.65  # ▲ fase 2: capturar al menos 65% (antes 55%)
+TRAIL_GAIN_3        = 0.80  # ▲ fase 3: capturar al menos 80% (antes 75%)
 
 # Costes (backtest)
 COMMISSION_PCT = 0.10
@@ -249,9 +249,9 @@ IS_RATIO = 0.65
 
 PB_EMA_FAST         = 20      # EMA rápida — soporte dinámico principal
 PB_EMA_MID          = 50      # EMA media — soporte si tendencia muy fuerte
-PB_TOUCH_BUFFER     = 0.003   # ▼ toque más preciso (antes 0.5%)
-PB_VOL_MAX_RANK     = 35      # ▼ retroceso más silencioso (antes 45)
-PB_TREND_MIN_BARS   = 15      # ▲ tendencia más confirmada (antes 10)
+PB_TOUCH_BUFFER     = 0.005   # precio dentro del 0.5% de la EMA = "toque"
+PB_VOL_MAX_RANK     = 45      # volumen ≤ percentil 45 durante retroceso (silencioso)
+PB_TREND_MIN_BARS   = 10      # EMA20>EMA50>EMA200 durante al menos 10 días
 PB_PANIC_MAX        = 80      # mismo filtro pánico que momentum
 PB_TP_R             = 2.5     # TP a 2.5R — más recorrido que MR (continuación)
 PB_MAX_HOLD         = 20      # máx 20 días — pullbacks resuelven rápido
@@ -598,24 +598,33 @@ def backtest(ticker, ind):
                 in_trade = False
                 continue
 
-            # pnl_r usa peak del día ANTERIOR para decidir fases.
-            # Pero high_today puede ser un nuevo máximo → actualizar peak ANTES
-            # para que el trailing proteja el nivel real alcanzado HOY.
-            peak = max(peak, high_today)
+            # pnl_r_peak usa el peak del día ANTERIOR (ya fijado)
+            # Así el trailing del día de hoy protege contra el LOW de hoy.
             pnl_r_peak  = (peak        - entry_price) / risk
             pnl_r_today = (high_today  - entry_price) / risk
             pnl_r_close = (price       - entry_price) / risk
 
-            # ── BREAK-EVEN: HIGH supera 0.5R (antes 0.6R) ────────────
-            if pnl_r_today >= 0.5 and sl < entry_price:
+            # ── BREAK-EVEN: HIGH supera 0.6R ────────────────────────
+            # En cuanto el HIGH del día supera 0.6R, el SL va a BE.
+            # Esto elimina pérdidas en trades que llegaron a ganar un % decente.
+            if pnl_r_today >= BREAKEVEN_AT_R and sl < entry_price:
                 sl = max(sl, entry_price * 1.001)
 
-            # ── TRAILING — cuatro fases progresivas ───────────────────
-            # v2.0: floor de ganancia más alto + activación temprana
-            # El floor SIEMPRE gana: si peak×0.95 es peor que entry+45%×gain
-            # se usa el floor. Esto es lo que evita +8% → -6%.
+            # ── TRAILING % DEL PICO — tres fases progresivas ────────
+            # SL = peak × (1 - TRAIL_PCT)
+            # Se actualiza cada barra usando el HIGH más alto alcanzado.
+            # Expresado como % del pico: consistente en todos los activos
+            # independientemente de su precio absoluto o ATR.
+            #
+            # Ejemplo con pico $116 (entrada $100, riesgo $8):
+            # Fase 1 (1R): SL = $116 × 0.94 = $109.0 → +9% desde entrada
+            # Fase 2 (2R): SL = $116 × 0.96 = $111.4 → +11.4% desde entrada
+            # Fase 3 (3R): SL = $116 × 0.975 = $113.1 → +13.1% desde entrada
 
             if pnl_r_peak >= TRAIL_ACT_1_R:
+                # SL = máximo entre:
+                # (a) peak × (1-PCT): suelo absoluto del SL
+                # (b) entry + GAIN × (peak-entry): % de ganancia protegida
                 gain = peak - entry_price
                 trail = max(
                     peak * (1 - TRAIL_PCT_1),
@@ -640,12 +649,18 @@ def backtest(ticker, ind):
                 sl = max(sl, trail)
 
             if pnl_r_peak >= 4.0:
+                # Fase 4: trade excepcional — proteger 87% del pico
+                # Deja solo un 1.5% de margen desde el pico
                 gain = peak - entry_price
                 trail = max(
                     peak * (1 - 0.015),
                     entry_price + 0.87 * gain
                 )
                 sl = max(sl, trail)
+
+            # Actualizar peak DESPUÉS de calcular el trailing
+            # Así el trailing de hoy protege contra el LOW de hoy
+            peak = max(peak, high_today)
 
             # ── EVALUAR SALIDA ───────────────────────────────────────
             # Usar LOW del día para SL (el precio bajó hasta ahí intradía)
@@ -1961,8 +1976,8 @@ function drawLineChart(id,datasets,opts={}){
 
 def main():
     print(f"\n{BOLD}{'═'*65}{RST}")
-    print(f"{BOLD}{C}  ◈  MOMENTUM BREAKOUT ENGINE  v2.0{RST}")
-    print(f"{DIM}  Momentum Breakout + Pullback Tier1 — trailing mejorado{RST}")
+    print(f"{BOLD}{C}  ◈  MOMENTUM BREAKOUT ENGINE  v1.1{RST}")
+    print(f"{DIM}  Momentum Breakout + Mean Reversion — dos estrategias complementarias{RST}")
     print(f"{BOLD}{'═'*65}{RST}\n")
 
     # ── Descargar datos ──────────────────────────────────────────────
@@ -2049,16 +2064,8 @@ def main():
                   f"no_comp={d['no_comp']} no_bo={d['no_bo']} "
                   f"all3={d['all3']} bad_lvl={d['bad_levels']}")
 
-        # ── PULLBACK EN TENDENCIA — solo Tier1 ─────────────────────
-        if ticker in TIER1_ASSETS:
-            mom_open = build_momentum_open_set(trades_full)
-            pb_trades_full, pb_diag = backtest_mr(ticker, ind_full, mom_open)
-            pb_oos = [t for t in pb_trades_full if t['entry_date'] >= oos_start_str]
-            pb_is_raw, _ = backtest_mr(ticker, ind_is, build_momentum_open_set(trades_is))
-            for t in pb_is_raw: t['period'] = 'IS'
-            for t in pb_oos:    t['period'] = 'OOS'
-            all_is_mr.extend(pb_is_raw)
-            all_oos_mr.extend(pb_oos)
+        # ── ESTRATEGIA COMPLEMENTARIA: ELIMINADA ─────────────────────
+        # Solo momentum puro. Sin pullback ni mean reversion.
 
         # ── SEÑALES DE HOY ───────────────────────────────────────────────
         sig = get_today_signal(ticker, ind)
