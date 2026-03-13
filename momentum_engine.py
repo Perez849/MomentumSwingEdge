@@ -246,7 +246,7 @@ IS_RATIO = 0.65
 # en el mismo ticker (no acumular en el mismo activo).
 
 MR_RSI_PERIOD       = 3       # RSI ultra-corto — muy sensible a caídas bruscas
-MR_RSI_THRESHOLD    = 25      # oversold severo (RSI3 ≤ 25)
+MR_RSI_THRESHOLD    = 20      # oversold extremo (RSI3 ≤ 20) — solo dips reales
 MR_DROP_ATR         = 1.5     # la caída desde el máximo reciente debe ser ≥ 1.5×ATR
 MR_DROP_BARS        = 5       # ventana para medir la caída (últimos 5 días)
 MR_PANIC_MAX        = 90      # más permisivo que momentum (80) — el pánico moderado
@@ -870,11 +870,23 @@ def backtest_mr(ticker, ind, momentum_open_dates=None):
         if price_now <= ema50_now or price_now <= ema200_now:
             diag['no_trend'] += 1
             continue
+        # EMA50 debe estar sobre EMA200 — tendencia estructural confirmada
+        if ema50_now <= ema200_now:
+            diag['no_trend'] += 1
+            continue
 
         # Condición 2: oversold RSI3
         rsi3_now = _v(ind, 'rsi3', i)
         if rsi3_now <= 0 or rsi3_now > MR_RSI_THRESHOLD:
             diag['no_oversold'] += 1
+            continue
+
+        # Condición 4 (nueva): volumen bajo en el día oversold
+        # Capitulación con volumen ALTO = pánico real que suele continuar.
+        # Dip comprable = caída silenciosa, sin vendedores masivos detrás.
+        vol_rank_now = ind['vol_rank'][i]
+        if not np.isnan(vol_rank_now) and vol_rank_now > 40:
+            diag['no_drop'] += 1  # reutilizamos contador de diagnóstico
             continue
 
         # Condición 3: caida real >= 1.5xATR en los ultimos MR_DROP_BARS dias
@@ -2068,17 +2080,7 @@ def main():
         m_oos_combined['max_dd']    = port_oos['max_dd']
         m_oos_combined['sharpe']    = port_oos['sharpe']
         m_oos_combined['cagr']      = port_oos['cagr']
-    # También actualizar global para compatibilidad con dashboard
-    if m_is_global and port_is:
-        m_is_global['total_pct'] = port_is['total_pct']
-        m_is_global['max_dd']    = port_is['max_dd']
-        m_is_global['sharpe']    = port_is['sharpe']
-        m_is_global['cagr']      = port_is['cagr']
-    if m_oos_global and port_oos:
-        m_oos_global['total_pct'] = port_oos['total_pct']
-        m_oos_global['max_dd']    = port_oos['max_dd']
-        m_oos_global['sharpe']    = port_oos['sharpe']
-        m_oos_global['cagr']      = port_oos['cagr']
+    # m_oos_global conserva sus métricas trade-a-trade puras (sin portfolio combinado)
 
     # Períodos
     is_dates  = sorted([t['entry_date'] for t in all_is_combined])
@@ -2194,8 +2196,9 @@ def main():
         "generated_at":  datetime.now().isoformat(),
         "is_period":     is_period,
         "oos_period":    oos_period,
-        "is_metrics":    m_is_global,
-        "oos_metrics":   m_oos_global,
+        "is_metrics":    m_is_combined,
+        "oos_metrics":   m_oos_combined,
+        "mom_metrics_oos": m_oos_global,
         "portfolio_oos": port_oos,
         "portfolio_is":  port_is,
         "benchmark":     benchmark,
