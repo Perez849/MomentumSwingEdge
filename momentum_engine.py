@@ -21,7 +21,7 @@
 ║  Volatilidad realizada 20d en percentil ≥ 80 → pánico → no operar   ║
 ║                                                                      ║
 ║  SL: mínimo de la compresión (soporte estructural real)              ║
-║  TP: 2.5 × riesgo (R/R mínimo 2.5:1)                                ║
+║  TP: 3.5 × riesgo (R/R mínimo 3.5:1)                                ║
 ║  Trailing: EMA8 una vez que el trade supera 1R                       ║
 ║                                                                      ║
 ║  ESTE ARCHIVO HACE TODO:                                             ║
@@ -320,10 +320,11 @@ BREAKOUT_VOL_PERCENTILE = 65   # volumen confirmado sin exigir top 25%
 # 2. A 1.0R de HIGH: trailing peak - 2.0×ATR (espacio para respirar)  
 # 3. A 2.0R de HIGH: trailing peak - 1.5×ATR (más ajustado)
 # 4. A 3.0R de HIGH: trailing peak - 1.0×ATR (proteger ganancias grandes)
-TP_R_MULTIPLE       = 5.0   # TP amplio — trailing gestiona la salida real
+TP_R_MULTIPLE       = 3.5   # TP a 3.5R — más alcanzable, mejora WR y PF
 SL_BUFFER_PCT       = 0.5   # buffer en el SL estructural
-MAX_HOLD_DAYS       = 40    # liberar capital antes — momentum muere antes de 60d
+MAX_HOLD_DAYS       = 25    # momentum muere rápido — liberar capital para mejores ops
 BREAKEVEN_AT_R      = 1.0   # break-even cuando HIGH supera 1R
+EXIT_NO_PROGRESS_DAYS = 15  # si en 15 días no llega a 1R → salir (trade zombi)
 
 # Trailing dual: % del pico Y % de ganancia protegida (el mayor de los dos)
 # SL = max(peak × (1 - TRAIL_PCT), entry + TRAIL_GAIN × ganancia_actual)
@@ -335,14 +336,14 @@ TRAIL_ACT_2_R       = 2.0   # activar fase 2 cuando HIGH alcanza 2R
 TRAIL_ACT_3_R       = 3.0   # activar fase 3 cuando HIGH alcanza 3R
 
 # % del pico (suelo del SL)
-TRAIL_PCT_1         = 0.05  # fase 1: SL no baja de peak × 0.95
-TRAIL_PCT_2         = 0.035 # fase 2: SL no baja de peak × 0.965
-TRAIL_PCT_3         = 0.02  # fase 3: SL no baja de peak × 0.98
+TRAIL_PCT_1         = 0.04  # fase 1: SL no baja de peak × 0.96
+TRAIL_PCT_2         = 0.03  # fase 2: SL no baja de peak × 0.97
+TRAIL_PCT_3         = 0.015 # fase 3: SL no baja de peak × 0.985
 
 # % de ganancia protegida (techo del SL — garantiza capturar parte del movimiento)
-TRAIL_GAIN_1        = 0.40  # fase 1: capturar al menos 40% de (peak-entry)
-TRAIL_GAIN_2        = 0.60  # fase 2: capturar al menos 60% de (peak-entry)
-TRAIL_GAIN_3        = 0.80  # fase 3: capturar al menos 80% de (peak-entry)
+TRAIL_GAIN_1        = 0.50  # fase 1: capturar al menos 50% de (peak-entry)
+TRAIL_GAIN_2        = 0.65  # fase 2: capturar al menos 65% de (peak-entry)
+TRAIL_GAIN_3        = 0.83  # fase 3: capturar al menos 83% de (peak-entry)
 
 # Costes (backtest)
 COMMISSION_PCT = 0.10
@@ -746,6 +747,8 @@ def backtest(ticker, ind):
                 reason = 'SL'
             elif high_today >= tp:
                 reason = 'TP'
+            elif held >= EXIT_NO_PROGRESS_DAYS and pnl_r_peak < 1.0:
+                reason = 'M⚡'  # momentum muerto — no llegó a 1R en 15 días
             elif held >= MAX_HOLD_DAYS:
                 reason = 'T'
 
@@ -808,7 +811,7 @@ def backtest(ticker, ind):
 
         # Las tres condiciones pasan — calcular niveles
         entry_p, sl_p, tp_p, rr = compute_levels(ind, i, comp_d, ticker)
-        if entry_p is None or rr < 1.5:  # R/R mínimo 1.5
+        if entry_p is None or rr < 2.0:  # R/R mínimo 2.0 (TP=3.5R)
             diag['bad_levels'] += 1
             continue
 
@@ -866,16 +869,24 @@ def compute_metrics(trades):
         else:
             cur = 0
 
-    # Efficiency ratio: P&L salida / Pico P&L
-    # Mide qué fracción del movimiento máximo capturaste realmente
-    # Si el trade llegó a +16% de pico pero saliste en +5%, efficiency=31%
+    # Efficiency ratio: qué % del pico capturaste en la salida
+    # Solo sobre ganadores con pico > 0.5% (evita división por ruido)
+    # Un perdedor que llegó a +5% de pico y salió en -3% tiene eficiencia -60%
+    # pero eso no mide trailing — mide que el trade falló después del pico
+    # Métrica útil: sobre TODOS los trades con pico >0.5%, mide captura media
     efficiencies = []
     for t in trades:
         peak_p = t.get('peak_pnl', 0)
         pnl_p  = t.get('pnl', 0)
-        if peak_p > 0.5:  # solo trades con pico significativo
+        if peak_p > 0.5:
             efficiencies.append(pnl_p / peak_p * 100)
+    # Reportar por separado ganadores vs total para contexto
+    eff_winners = [pnl_p / peak_p * 100
+                   for t in trades
+                   for peak_p, pnl_p in [(t.get('peak_pnl',0), t.get('pnl',0))]
+                   if peak_p > 0.5 and pnl_p > 0]
     avg_efficiency = round(float(np.mean(efficiencies)), 1) if efficiencies else 0
+    avg_eff_winners = round(float(np.mean(eff_winners)), 1) if eff_winners else 0
 
     return {
         'n':               n,
@@ -898,7 +909,7 @@ def compute_metrics(trades):
 # PORTFOLIO SIMULATOR — equity día a día con posiciones paralelas
 # ════════════════════════════════════════════════════════════════════
 
-def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=10.0):
+def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=15.0):
     """
     Simula el portfolio día a día con posiciones paralelas reales.
 
@@ -1892,8 +1903,8 @@ def main():
 
     # Portfolio simulation — equity día a día con posiciones paralelas
     # 10% del capital por posición = máximo 10 posiciones simultáneas con el 100%
-    port_is  = portfolio_simulate(all_is_trades,  position_size_pct=10.0)
-    port_oos = portfolio_simulate(all_oos_trades, position_size_pct=10.0)
+    port_is  = portfolio_simulate(all_is_trades,  position_size_pct=15.0)
+    port_oos = portfolio_simulate(all_oos_trades, position_size_pct=15.0)
 
     # Añadir métricas de portfolio a los dicts globales
     if m_is_global and port_is:
