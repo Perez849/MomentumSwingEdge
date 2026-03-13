@@ -289,19 +289,19 @@ TREND_BARS = 60
 
 # Cuántos múltiplos del ATR diario normalizado debe haber subido
 # 1.5 significa: ha subido más de 1.5 veces su rango diario típico en 60 días
-TREND_ATR_MULTIPLE = 2.0   # más exigente — solo tendencias con fuerza real
+TREND_ATR_MULTIPLE = 1.5   # tendencia real pero sin exigir rally extraordinario
 
 # EMA larga para confirmar tendencia
 TREND_EMA = 50
 
 # Percentil de volatilidad para la compresión (≤ este percentil = comprimido)
-COMPRESSION_VOL_PERCENTILE = 25
+COMPRESSION_VOL_PERCENTILE = 35  # percentil 35: compresión real sin ser extrema
 
 # Percentil de volatilidad para el filtro de pánico (≥ este = no operar)
 PANIC_VOL_PERCENTILE = 80
 
 # Percentil de volumen mínimo en el breakout
-BREAKOUT_VOL_PERCENTILE = 75   # más selectivo — filtrar breakouts sin fuerza
+BREAKOUT_VOL_PERCENTILE = 65   # volumen confirmado sin exigir top 25%
 
 # Gestión del trade
 # ──────────────────────────────────────────────────────────────────
@@ -570,7 +570,7 @@ def check_breakout(ind, i):
     # Filtra roturas marginales sin fuerza real (los trades R<1 suelen
     # entrar con breakouts de pennies por encima del maximo).
     atr_now      = _v(ind, 'atr14', i)
-    min_breakout = prev_high + 0.30 * atr_now
+    min_breakout = prev_high + 0.20 * atr_now
 
     # CLOSE en el 40% superior del rango diario
     daily_range = _v(ind, 'h', i) - _v(ind, 'lo', i)
@@ -610,23 +610,24 @@ def compute_levels(ind, i, comp_detail, ticker=""):
     # rango de 10%+ no era compresion real, era volatilidad normal.
     atr_entry = float(ind['atr14'][i]) if 'atr14' in ind else 0
     risk_pct  = (entry - sl) / entry
-    max_sl_pct = 0.10 if ticker in HIGH_VOL_ASSETS else 0.08
+    max_sl_pct = 0.12 if ticker in HIGH_VOL_ASSETS else 0.10
 
     if risk_pct > max_sl_pct:
         return None, None, None, None  # riesgo absoluto excesivo
 
-    if atr_entry > 0:
-        atr_ratio = (atr_entry / entry) / risk_pct  # ATR_pct / riesgo_pct
-        min_ratio = 0.35 if ticker in HIGH_VOL_ASSETS else 0.40
-        if atr_ratio < min_ratio:
-            return None, None, None, None  # activo demasiado lento para el riesgo
+    # Filtro ATR/riesgo: desactivado hasta calibrar con datos suficientes (>50 trades OOS)
+    # if atr_entry > 0:
+    #     atr_ratio = (atr_entry / entry) / risk_pct
+    #     min_ratio = 0.35 if ticker in HIGH_VOL_ASSETS else 0.40
+    #     if atr_ratio < min_ratio:
+    #         return None, None, None, None
     risk = entry - sl
 
     if risk <= 0:
         return None, None, None, None
     # Riesgo mínimo: 1.5% — si el SL está muy cerca es una señal débil
     # y el TP queda demasiado cerca para que valga la pena entrar
-    if risk / entry < 0.015:
+    if risk / entry < 0.010:
         return None, None, None, None
 
     tp   = entry + risk * TP_R_MULTIPLE
@@ -650,6 +651,8 @@ def backtest(ticker, ind):
     """
     n      = ind['n']
     trades = []
+    diag   = {'panic': 0, 'no_trend': 0, 'no_comp': 0, 'no_bo': 0,
+              'all3': 0, 'bad_levels': 0}
 
     in_trade    = False
     entry_price = sl = sl_initial = tp = peak = 0.0
@@ -780,26 +783,33 @@ def backtest(ticker, ind):
 
         # Filtro de pánico — si el activo está en modo pánico, ignorar
         if check_panic(ind, i):
+            diag['panic'] += 1
             continue
 
         # Condición 1: Tendencia
         trend_ok, trend_d = check_trend(ind, i, ticker)
         if not trend_ok:
+            diag['no_trend'] += 1
             continue
 
         # Condición 2: Compresión
         comp_ok, comp_d = check_compression(ind, i)
         if not comp_ok:
+            diag['no_comp'] += 1
             continue
 
         # Condición 3: Breakout
         bo_ok, bo_d = check_breakout(ind, i)
         if not bo_ok:
+            diag['no_bo'] += 1
             continue
+
+        diag['all3'] += 1
 
         # Las tres condiciones pasan — calcular niveles
         entry_p, sl_p, tp_p, rr = compute_levels(ind, i, comp_d, ticker)
         if entry_p is None or rr < 1.5:  # R/R mínimo 1.5
+            diag['bad_levels'] += 1
             continue
 
         in_trade    = True
@@ -811,7 +821,7 @@ def backtest(ticker, ind):
         entry_i     = i
         entry_date  = ind['dates'][i]
 
-    return trades
+    return trades, diag
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -1838,12 +1848,12 @@ def main():
         ind_is   = compute_indicators(df_is)
         ind_full = compute_indicators(df)   # para el OOS: historia completa
 
-        trades_is  = backtest(ticker, ind_is)
+        trades_is, diag_is   = backtest(ticker, ind_is)
 
         # Para OOS: backtest sobre el df completo pero solo conservar
         # trades cuya entrada cae en el período OOS
         oos_start_str = OOS_START.strftime('%Y-%m-%d')
-        trades_full   = backtest(ticker, ind_full)
+        trades_full, diag_full = backtest(ticker, ind_full)
         trades_oos    = [t for t in trades_full if t['entry_date'] >= oos_start_str]
 
         # Tag
@@ -1864,6 +1874,12 @@ def main():
         print(f"IS:{n_is:>3}t WR={wr_is:.0f}% │ "
               f"OOS:{n_oos:>3}t {col}WR={wr_oos:.0f}%{RST} "
               f"PF={m_oos['pf'] if m_oos else 0:.2f}")
+        if n_oos == 0 and n_is == 0:
+            # Mostrar por qué no hay trades — útil para calibrar filtros
+            d = diag_full
+            print(f"   ↳ sin trades: panic={d['panic']} no_trend={d['no_trend']} "
+                  f"no_comp={d['no_comp']} no_bo={d['no_bo']} "
+                  f"all3={d['all3']} bad_lvl={d['bad_levels']}")
 
         # ── SEÑALES DE HOY ───────────────────────────────────────────
         sig = get_today_signal(ticker, ind)
