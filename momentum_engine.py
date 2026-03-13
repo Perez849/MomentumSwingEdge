@@ -904,7 +904,7 @@ def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=15.0):
 
     # Máx posiciones simultáneas — usando índices numéricos (eficiente)
     open_arr = np.zeros(n_days, dtype=int)
-    for (ei, xi, _) in open_trades:
+    for (ei, xi, _, _t) in open_trades:
         open_arr[ei:xi+1] += 1
     max_concurrent = int(open_arr.max()) if n_days > 0 else 0
 
