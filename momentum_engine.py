@@ -179,7 +179,7 @@ COMPRESSION_VOL_PERCENTILE = 35  # percentil 35: compresión real sin ser extrem
 PANIC_VOL_PERCENTILE = 80
 
 # Percentil de volumen mínimo en el breakout
-BREAKOUT_VOL_PERCENTILE = 70   # ▲ volumen percentil 70 (antes 65) — breakouts más convincentes
+BREAKOUT_VOL_PERCENTILE = 65   # volumen confirmado sin exigir top 25%
 
 # Gestión del trade
 # ──────────────────────────────────────────────────────────────────
@@ -218,10 +218,10 @@ TRAIL_PCT_1         = 0.05  # fase 1: SL no baja de peak × 0.95
 TRAIL_PCT_2         = 0.035 # fase 2: SL no baja de peak × 0.965
 TRAIL_PCT_3         = 0.02  # fase 3: SL no baja de peak × 0.98
 
-# % de ganancia protegida (floor — garantiza capturar parte del movimiento)
-TRAIL_GAIN_1        = 0.50  # ▲ fase 1: capturar al menos 50% (antes 40%)
-TRAIL_GAIN_2        = 0.65  # ▲ fase 2: capturar al menos 65% (antes 55%)
-TRAIL_GAIN_3        = 0.80  # ▲ fase 3: capturar al menos 80% (antes 75%)
+# % de ganancia protegida (techo del SL — garantiza capturar parte del movimiento)
+TRAIL_GAIN_1        = 0.40  # fase 1: capturar al menos 40% de (peak-entry)
+TRAIL_GAIN_2        = 0.55  # fase 2: capturar al menos 55% de (peak-entry)
+TRAIL_GAIN_3        = 0.75  # fase 3: capturar al menos 75% de (peak-entry)
 
 # Costes (backtest)
 COMMISSION_PCT = 0.10
@@ -489,17 +489,16 @@ def check_breakout(ind, i):
     # Máximo de las barras anteriores (sin incluir la barra actual)
     prev_high = float(np.max(ind['h'][i - COMPRESSION_BARS:i]))
 
-    # Breakout debe superar el maximo por al menos 0.30xATR (antes 0.20)
-    # ▲ Filtra breakouts marginales que no tienen fuerza de continuación.
+    # Breakout debe superar el maximo por al menos 0.3xATR
+    # Filtra roturas marginales sin fuerza real (los trades R<1 suelen
+    # entrar con breakouts de pennies por encima del maximo).
     atr_now      = _v(ind, 'atr14', i)
-    min_breakout = prev_high + 0.30 * atr_now
+    min_breakout = prev_high + 0.20 * atr_now
 
-    # CLOSE en el 50% superior del rango diario (antes 40%)
-    # ▲ Un breakout real cierra fuerte. Si cierra en la mitad inferior
-    # del rango, los vendedores ya están respondiendo → trampa.
+    # CLOSE en el 40% superior del rango diario
     daily_range = _v(ind, 'h', i) - _v(ind, 'lo', i)
     close_pct   = (close - _v(ind, 'lo', i)) / daily_range if daily_range > 0 else 0.5
-    broke_out   = high >= min_breakout and close_pct >= 0.50
+    broke_out   = high >= min_breakout and close_pct >= 0.4
     strong_vol  = vr >= BREAKOUT_VOL_PERCENTILE
 
     ok = broke_out and strong_vol
@@ -539,16 +538,12 @@ def compute_levels(ind, i, comp_detail, ticker=""):
     if risk_pct > max_sl_pct:
         return None, None, None, None  # riesgo absoluto excesivo
 
-    # Filtro ATR/riesgo: ACTIVADO — elimina trades lentos sin momentum real.
-    # Ratio = ATR_diario / riesgo_pct. Si ratio < 0.30: el activo no tiene
-    # velocidad para alcanzar 1R en tiempo razonable. Datos: trades malos
-    # (R_pico<1) ratio medio 0.19, trades buenos (R_pico>2) ratio 0.43.
-    # Corte a 0.30 elimina la mayoría de los malos, mantiene los buenos.
-    if atr_entry > 0 and risk_pct > 0:
-        atr_ratio = (atr_entry / entry) / risk_pct
-        min_ratio = 0.25 if ticker in HIGH_VOL_ASSETS else 0.30
-        if atr_ratio < min_ratio:
-            return None, None, None, None
+    # Filtro ATR/riesgo: desactivado hasta calibrar con datos suficientes (>50 trades OOS)
+    # if atr_entry > 0:
+    #     atr_ratio = (atr_entry / entry) / risk_pct
+    #     min_ratio = 0.35 if ticker in HIGH_VOL_ASSETS else 0.40
+    #     if atr_ratio < min_ratio:
+    #         return None, None, None, None
     risk = entry - sl
 
     if risk <= 0:
@@ -2069,8 +2064,9 @@ def main():
                   f"no_comp={d['no_comp']} no_bo={d['no_bo']} "
                   f"all3={d['all3']} bad_lvl={d['bad_levels']}")
 
-        # ── ESTRATEGIA COMPLEMENTARIA: ELIMINADA ─────────────────────
-        # Solo momentum puro. Sin pullback ni mean reversion.
+        # ── ESTRATEGIA COMPLEMENTARIA: desactivada ──────────────────
+        # Pendiente de investigación — solo momentum puro en producción
+        pass
 
         # ── SEÑALES DE HOY ───────────────────────────────────────────────
         sig = get_today_signal(ticker, ind)
