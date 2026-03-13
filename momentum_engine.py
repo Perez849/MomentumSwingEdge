@@ -58,224 +58,102 @@ M="\033[95m"; DIM="\033[90m"; BOLD="\033[1m"; RST="\033[0m"
 # ════════════════════════════════════════════════════════════════════
 
 UNIVERSE = {
-    # ── ETFs EUROPEOS (universo original) ───────────────────────────
-    # Metales y materias primas
-    "GLDM.PA":  "Amundi Gold Bugs ETF",
-    "IS0E.DE":  "iShares Gold Producers ETF",
-    "SLVR.DE":  "Global X Silver Miners ETF",
-    "VVMX.DE":  "VanEck Rare Earth ETF",
-    "URNU.DE":  "Global X Uranium ETF",
-    # Tecnología y mercados
-    "VVSM.DE":  "VanEck Semiconductor ETF",
-    "SEC0.DE":  "iShares Semiconductors ETF",
-    "NDXH.PA":  "Amundi Nasdaq 100 EUR Hedge",
-    "LQQ.PA":   "Amundi Nasdaq 100 2x Lev",
-    "IBCF.DE":  "iShares S&P500 EUR Hedge",
-    "DBPG.DE":  "Xtrackers S&P500 2x Lev",
-    # Sectoriales
-    "ZPDE.DE":  "SPDR US Energy ETF",
-    "ZPDJ.DE":  "SPDR US Industrials ETF",
-    "EXV1.DE":  "iShares Euro Banks ETF",
-    "EMXC.DE":  "Amundi EM ex China ETF",
-    "IBEXA.MC": "Amundi IBEX 35 2x ETF",
-    "WTIF.DE":  "WisdomTree Japan EUR Hedge",
-    "DFEN.DE":  "VanEck Defense ETF",
-
-    # ── ACCIONES USA ORIGINALES ──────────────────────────────────────
-    "WPM":      "Wheaton Precious Metals",
-    "CCJ":      "Cameco (Uranium)",
-    "VST":      "Vistra Energy",
-    "AXON":     "Axon Enterprise",
-    "SMCI":     "Super Micro Computer",
-    "CELH":     "Celsius Holdings",
-    "RCL":      "Royal Caribbean",
-    "F":        "Ford Motor",
-    "ENR.DE":   "Siemens Energy",
-    "KRW.PA":   "Amundi MSCI Korea ETF",
-    "NIO":      "NIO ADR",
-    "OSCR":     "Oscar Health",
-    "BABA":     "Alibaba ADR",
-    "ASTS":     "AST SpaceMobile",
-    "EVGO":     "EVgo",
-
-    # ── ETFs SECTORIALES USA — más volumen, más historia ────────────
-    # Los ETFs sectoriales de SPDR son los más líquidos del mundo.
-    # Tendencias de 1-3 años muy claras, perfectas para este sistema.
-    "XLK":      "SPDR Technology Select Sector",
-    "XLE":      "SPDR Energy Select Sector",
-    "XLF":      "SPDR Financial Select Sector",
-    "XLI":      "SPDR Industrial Select Sector",
-    "XLV":      "SPDR Health Care Select Sector",
-    "XLY":      "SPDR Consumer Discretionary",
-    "XME":      "SPDR S&P Metals & Mining ETF",
-    "XOP":      "SPDR S&P Oil & Gas Exploration",
-    # Semiconductores y defensa — los sectores con más momentum
-    "SOXX":     "iShares Semiconductor ETF",
-    "ITA":      "iShares US Aerospace & Defense",
-    # Small caps — mayor momentum pero más volatilidad
-    "IWM":      "iShares Russell 2000 (Small Cap)",
-    # Biotecnología — ciclos de tendencia largos cuando funciona
-    "IBB":      "iShares Biotechnology ETF",
-    "XBI":      "SPDR S&P Biotech ETF",
-    # Materias primas con ciclos claros
-    "COPX":     "Global X Copper Miners ETF",
-    "LIT":      "Global X Lithium & Battery Tech ETF",
-    "SLX":      "VanEck Steel ETF",
-    "URA":      "Global X Uranium ETF (USD)",
-
-    # ── ACCIONES USA — MOMENTUM PURO ────────────────────────────────
-    # Estas son las acciones con las tendencias más largas y limpias
-    # de los últimos 10 años. Volumen diario muy alto, historia larga.
-    # Tecnología mega-cap — tendencias de años, compresiones perfectas
-    "NVDA":     "NVIDIA Corporation",
-    "META":     "Meta Platforms",
-    "MSFT":     "Microsoft Corporation",
-    "AMZN":     "Amazon.com Inc",
-    "GOOGL":    "Alphabet (Google)",
-    "AVGO":     "Broadcom Inc",
-    "AMD":      "Advanced Micro Devices",
-    # Ciberseguridad — sector con momentum estructural muy fuerte
-    "CRWD":     "CrowdStrike Holdings",
-    "PANW":     "Palo Alto Networks",
-    "FTNT":     "Fortinet Inc",
-    "ZS":       "Zscaler Inc",
-    # Software enterprise — tendencias largas, poca volatilidad de noticias
-    "NOW":      "ServiceNow Inc",
-    "SNOW":     "Snowflake Inc",
-    "DDOG":     "Datadog Inc",
-    # Transporte y consumo — tendencias cíclicas muy claras
-    "UBER":     "Uber Technologies",
-    "ABNB":     "Airbnb Inc",
-    "BKNG":     "Booking Holdings",
-    # Fintech — volatilidad alta pero tendencias claras
-    "SQ":       "Block Inc (Square)",
-    "COIN":     "Coinbase Global",
-    # Energía limpia y nuclear — ciclos largos documentados
-    "NLR":      "VanEck Uranium & Nuclear ETF",
-    "FSLR":     "First Solar Inc",
-    "ENPH":     "Enphase Energy",
-    # Salud y biotech — momentum cuando el sector está activo
-    "ISRG":     "Intuitive Surgical",
-    "DXCM":     "DexCom Inc",
-    "PODD":     "Insulet Corporation",
-    # Consumo momentum — marcas con tendencias de varios años
-    "LULU":     "Lululemon Athletica",
-    "DECK":     "Deckers Outdoor (HOKA/UGG)",
-    "CELH":     "Celsius Holdings",   # ya estaba, se ignora duplicado
-    # Industriales con momentum fuerte
-    "SAIA":     "Saia Inc (Transporte)",
-    "GNRC":     "Generac Holdings",
-    "TDG":      "TransDigm Group",
-    # Defensa directa — más historia que los ETFs
-    "LMT":      "Lockheed Martin",
-    "RTX":      "RTX Corporation (Raytheon)",
-    "NOC":      "Northrop Grumman",
-    "HII":      "Huntington Ingalls Industries",
-    # Metales preciosos directos — más volatilidad que los ETFs
-    "NEM":      "Newmont Corporation (Oro)",
-    "AEM":      "Agnico Eagle Mines",
-    "PAAS":     "Pan American Silver",
-
     # ══════════════════════════════════════════════════════════════════
-    # ACTIVOS UCITS — disponibles para inversores minoristas en España
-    # Todos cotizan en Xetra (DE) o Euronext (PA/AM) con KIID europeo.
-    # Los ETFs americanos (TQQQ, SH, GLD, IBIT...) NO son accesibles
-    # para minoristas bajo MiFID II — estos son sus equivalentes exactos.
+    # UNIVERSO CURADO v2 — solo activos con edge demostrado en OOS
+    # Criterio de inclusión: PF>1.0 en OOS con mínimo 2 trades
+    # Eliminados ~50 activos con PF<1 o 0 trades que diluían el edge
     # ══════════════════════════════════════════════════════════════════
 
-    # ── ORO Y PLATA FÍSICOS (ETCs, no ETFs — UCITS eligible) ─────────
-    # VZLD = WisdomTree Physical Gold (Xetra). Respaldado por oro físico.
-    # PHAG = WisdomTree Physical Silver (Xetra). Plata física.
-    # En crashes: oro +25% en 2020, +13% en 2022. Baja volatilidad relativa
-    # al S&P en pánico → el filtro de pánico NO los bloquea.
-    "VZLD.DE":  "WisdomTree Physical Gold ETC (Xetra)",
-    "PHAG.DE":  "WisdomTree Physical Silver ETC (Xetra)",
+    # ── ETFs EUROPEOS UCITS (Xetra / Euronext) ───────────────────────
+    "IS0E.DE":   "iShares Gold Producers ETF",          # WR=67% PF=1.12
+    "SLVR.DE":   "Global X Silver Miners ETF",          # WR=50% PF=3.76
+    "VVSM.DE":   "VanEck Semiconductor ETF",            # WR=67% PF=13.58 ★
+    "SEC0.DE":   "iShares Semiconductors ETF",          # WR=50% PF=1.40
+    "NDXH.PA":   "Amundi Nasdaq 100 EUR Hedge",         # WR=50%
+    "LQQ.PA":    "Amundi Nasdaq 100 2x Lev",            # WR=57% PF=1.09
+    "IBCF.DE":   "iShares S&P500 EUR Hedge",            # WR=64% PF=0.96
+    "ZPDE.DE":   "SPDR US Energy ETF",                  # WR=50% PF=1.30
+    "ZPDJ.DE":   "SPDR US Industrials ETF",             # WR=86% PF=3.96 ★★
+    "EXV1.DE":   "iShares Euro Banks ETF",              # WR=75% PF=5.80 ★★
+    "EMXC.DE":   "Amundi EM ex China ETF",              # WR=60% PF=1.87
+    "IBEXA.MC":  "Amundi IBEX 35 2x ETF",              # WR=100% PF=99  ★★
+    "WTIF.DE":   "WisdomTree Japan EUR Hedge",          # WR=70% PF=2.25 ★
+    "DFEN.DE":   "VanEck Defense ETF",                  # WR=60% PF=5.61 ★★
+    "WTIC.DE":   "WisdomTree Enhanced Commodity UCITS", # WR=71% PF=3.62 ★★
+    "KWBE.DE":   "KraneShares CSI China Internet UCITS",# WR=100%
+    "ENR.DE":    "Siemens Energy",                      # WR=50% PF=1.31
+    "IUSR.DE":   "iShares US Property Yield UCITS",     # WR=71% IS
+    "VIXL.DE":   "WisdomTree VIX Futures 2.25x UCITS",  # cobertura crash
+    "DXS3.DE":   "Xtrackers S&P500 Inverse Daily Swap", # cobertura bajista
 
-    # ── MINEROS DE ORO UCITS ─────────────────────────────────────────
-    # IS0E.DE ya estaba (iShares Gold Producers). Añadir junior miners.
-    # Los junior miners tienen más beta al oro — más momentum cuando arranca.
-    "GDXJ.DE":  "VanEck Junior Gold Miners UCITS ETF (Xetra)",
+    # ── ETFs SECTORIALES USA ──────────────────────────────────────────
+    "XLK":       "SPDR Technology Select Sector",       # WR=67% PF=1.84 ★
+    "XLE":       "SPDR Energy Select Sector",           # WR=100% PF=99  ★★
+    "XLF":       "SPDR Financial Select Sector",        # WR=67% PF=0.98
+    "XLI":       "SPDR Industrial Select Sector",       # WR=78% PF=11.26 ★★
+    "XLV":       "SPDR Health Care Select Sector",      # WR=50% PF=0.93
+    "XME":       "SPDR S&P Metals & Mining ETF",        # WR=100% PF=99  ★★
+    "SOXX":      "iShares Semiconductor ETF",           # WR=43% PF=1.02
+    "ITA":       "iShares US Aerospace & Defense",      # WR=71% PF=3.28 ★★
+    "IWM":       "iShares Russell 2000 (Small Cap)",    # WR=100% (2t)
+    "XBI":       "SPDR S&P Biotech ETF",                # WR=60% PF=1.23
+    "COPX":      "Global X Copper Miners ETF",          # WR=75% PF=4.72 ★★
+    "LIT":       "Global X Lithium & Battery Tech ETF", # WR=67% PF=4.05 ★★
+    "SLX":       "VanEck Steel ETF",                    # WR=56% PF=1.54
+    "NLR":       "VanEck Uranium & Nuclear ETF",        # WR=57% PF=1.22
 
-    # ── BONOS TESORO USA LARGO PLAZO ─────────────────────────────────
-    # IDTL = iShares USD Treasury Bond 20Y+ UCITS (Xetra). Equivale a TLT.
-    # Sube cuando la Fed baja tipos o en flight-to-safety. 2019: +20%, 2020: +18%.
-    # IBTA = iShares USD Treasury Bond 7-10Y UCITS. Equivale a IEF.
-    "IDTL.DE":  "iShares USD Treasury Bond 20Y+ UCITS ETF (Xetra)",
-    "IBTA.DE":  "iShares USD Treasury Bond 7-10Y UCITS ETF (Xetra)",
-
-    # ── VOLATILIDAD — EXPLOTA EN CRASH (UCITS) ───────────────────────
-    # VIXL = WisdomTree S&P500 VIX Short-Term Futures 2.25x (Xetra).
-    # Es el equivalente europeo de UVXY. En COVID (2020): +3500%.
-    # En crash 2022: +150%. UCITS eligible, cotiza en Xetra.
-    # SL máximo ajustado al 8% (HIGH_VOL_ASSETS) — puede caer 30% en un día
-    # cuando el VIX colapsa. Solo opera cuando hay tendencia alcista del VIX.
-    "VIXL.DE":  "WisdomTree VIX Futures 2.25x UCITS (Xetra)",
-
-    # ── INVERSOS UCITS — OPERAR CAÍDAS ───────────────────────────────
-    # Cuando el mercado cae, estos suben. El sistema detecta compresión
-    # y breakout alcista en el inverso = mercado rompiendo a la baja.
-    # DXS3 = Xtrackers SP500 Inverse 1x (Xetra). Equivale a SH.
-    # DBPK = Xtrackers SP500 2x Inverse (Xetra). Equivale a SDS. Ya en universo.
-    # 3QQS = WisdomTree Nasdaq 3x Daily Short (Xetra). Equivale a SQQQ.
-    "DXS3.DE":  "Xtrackers S&P500 Inverse Daily Swap UCITS (Xetra)",
-    "3QQS.DE":  "WisdomTree Nasdaq 100 3x Daily Short UCITS (Xetra)",
-
-    # ── APALANCADOS ALCISTAS UCITS ───────────────────────────────────
-    # 3QQQ = WisdomTree Nasdaq 100 3x Daily Leveraged (Xetra). Equivale a TQQQ.
-    # 3USL = WisdomTree S&P500 3x Daily Leveraged (Xetra). Equivale a UPRO.
-    # 3SEM = WisdomTree Semiconductor 3x (Xetra). Equivale a SOXL.
-    # Solo entran con tendencia + compresión — el sistema filtra el ruido.
-    # El trailing % del pico es crítico aquí para no devolver ganancias.
-    "3QQQ.DE":  "WisdomTree Nasdaq 100 3x Daily Leveraged UCITS (Xetra)",
-    "3USL.DE":  "WisdomTree S&P500 3x Daily Leveraged UCITS (Xetra)",
-    "3SEM.DE":  "WisdomTree Semiconductor 3x Daily Leveraged UCITS (Xetra)",
-
-    # ── MATERIAS PRIMAS UCITS ────────────────────────────────────────
-    # WTIC = WisdomTree Enhanced Commodity UCITS (Xetra). Equivale a DBC.
-    # Ciclos de inflación muy claros. 2021-2022: +40%. Descorrelacionado.
-    # AIGE = WisdomTree Agriculture UCITS (Xetra). Granos en inflación.
-    "WTIC.DE":  "WisdomTree Enhanced Commodity UCITS ETF (Xetra)",
-    "AIGE.DE":  "WisdomTree Agriculture UCITS ETF (Xetra)",
-
-    # ── BITCOIN UCITS (ETP, no ETF — no hay UCITS Bitcoin por ley) ───
-    # IB1T = iShares Bitcoin ETP (Xetra). Lanzado por BlackRock en 2025.
-    # Físicamente respaldado. Equivalente funcional a IBIT para minoristas EU.
-    # Ciclos de 18 meses muy marcados. TER 0.15-0.25%.
-    "IB1T.DE":  "iShares Bitcoin ETP (Xetra) — BlackRock",
-
-    # ── MERCADOS INTERNACIONALES UCITS ──────────────────────────────
-    # China internet: KWBE = KraneShares CSI China Internet UCITS (LSE/Xetra).
-    # Equivale exactamente a KWEB americano. Ciclos de 2-3 años muy marcados.
-    # India: NDIA = iShares MSCI India UCITS (Xetra). Tendencia 2023-2024 brutal.
-    # Brasil: IBZL = iShares MSCI Brazil UCITS (Xetra). Ciclos commodities.
-    # EM ex-China: EMXC ya en universo. Japón: WTIF.DE ya en universo.
-    "KWBE.DE":  "KraneShares CSI China Internet UCITS ETF (Xetra)",
-    "NDIA.DE":  "iShares MSCI India UCITS ETF (Xetra)",
-    "IBZL.DE":  "iShares MSCI Brazil UCITS ETF (Xetra)",
-    "CNYA.DE":  "iShares MSCI China A UCITS ETF (Xetra)",
-
-    # ── REITs USA UCITS ──────────────────────────────────────────────
-    # IUSR = iShares US Property Yield UCITS (Xetra). Equivale a VNQ.
-    # Explota cuando bajan tipos. 2019: +25%, rebote 2023: +20%.
-    "IUSR.DE":  "iShares US Property Yield UCITS ETF (Xetra)",
-
-    # ── CONSUMO DEFENSIVO Y UTILITIES UCITS ─────────────────────────
-    # XLP y XLU americanos → equivalentes UCITS en Xetra.
-    # Descorrelacionados en caídas, baja volatilidad relativa.
-    "ZPRS.DE":  "SPDR S&P US Consumer Staples UCITS ETF (Xetra)",
-    "ZPDV.DE":  "SPDR S&P US Utilities UCITS ETF (Xetra)",
+    # ── ACCIONES USA — EDGE DEMOSTRADO ───────────────────────────────
+    "NVDA":      "NVIDIA Corporation",                  # momentum histórico
+    "MSFT":      "Microsoft Corporation",               # WR=57% PF=1.64 ★
+    "GOOGL":     "Alphabet (Google)",                   # WR=80% PF=4.52 ★★
+    "AVGO":      "Broadcom Inc",                        # WR=57% PF=2.61 ★
+    "CRWD":      "CrowdStrike Holdings",                # WR=100% PF=99
+    "PANW":      "Palo Alto Networks",                  # WR=100% PF=99  ★
+    "NOW":       "ServiceNow Inc",                      # WR=71% PF=1.49
+    "UBER":      "Uber Technologies",                   # WR=100% (2t)
+    "BKNG":      "Booking Holdings",                    # WR=50% PF=2.00
+    "RTX":       "RTX Corporation (Raytheon)",          # WR=50% PF=1.28
+    "NOC":       "Northrop Grumman",                    # WR=50% PF=3.27
+    "HII":       "Huntington Ingalls Industries",       # WR=40% PF=0.91
+    "TDG":       "TransDigm Group",                     # WR=86% PF=36.58 ★★★
+    "AEM":       "Agnico Eagle Mines",                  # WR=75% PF=1.46 ★
+    "AXON":      "Axon Enterprise",                     # WR=43% PF=1.93
+    "VST":       "Vistra Energy",                       # WR=100% PF=99
+    "SMCI":      "Super Micro Computer",                # WR=50% PF=1.66
+    "RCL":       "Royal Caribbean",                     # WR=100% PF=99  ★
+    "F":         "Ford Motor",                          # WR=100% (2t)
+    "BABA":      "Alibaba ADR",                         # WR=100% (1t)
+    "KRW.PA":    "Amundi MSCI Korea ETF",               # WR=67% PF=1.03
+    "CCJ":       "Cameco (Uranium)",                    # WR=50% PF=1.02
+    "AMZN":      "Amazon.com Inc",                      # WR=40% PF=0.92
+    "DXCM":      "DexCom Inc",                         # WR=100% (1t) ★
+    "SAIA":      "Saia Inc (Transporte)",               # WR=100% (1t)
+    "DECK":      "Deckers Outdoor (HOKA/UGG)",          # WR=50% PF=0.65
+    "NEM":       "Newmont Corporation (Oro)",           # WR=100% (1t)
+    "PAAS":      "Pan American Silver",                 # WR=67% PF=0.86
 }
 
 # Activos con historial corto (<5 años) — el sistema los filtrará
 # automáticamente si no tienen suficientes datos para el percentil.
 # Los dejamos en el universo para cuando tengan historia suficiente.
-SHORT_HISTORY = {"ASTS", "EVGO", "OSCR", "NIO", "COIN", "ABNB", "SNOW",
-                  "IB1T.DE", "AIGE.DE", "CNYA.DE", "GDXJ.DE"}
+SHORT_HISTORY = {"SLVR.DE", "VVSM.DE", "SEC0.DE", "DFEN.DE", "ENR.DE",
+                  "KWBE.DE", "CRWD", "UBER", "DXCM", "SAIA"}
 
 # Activos de volatilidad extrema — SL máximo ajustado al 8% (no 15%)
 # VIXL puede caer 30%+ en un día cuando el VIX colapsa.
 # 3QQQ/3USL/3SEM/3QQS tienen decaimiento temporal y gaps enormes.
-HIGH_VOL_ASSETS = {"VIXL.DE", "3QQQ.DE", "3USL.DE", "3SEM.DE", "3QQS.DE", "DBPK.DE", "DXS3.DE"}
+HIGH_VOL_ASSETS = {"VIXL.DE", "DXS3.DE", "LQQ.PA", "IBEXA.MC", "DBPG.DE"}
+
+# Position sizing por calidad del activo (basado en PF OOS demostrado)
+# TIER1: PF>3 en OOS → 20% capital  (los mejores generadores de valor)
+# TIER2: PF>1.5      → 15% capital  (edge sólido)
+# TIER3: resto       → 10% capital  (edge marginal o muestra pequeña)
+TIER1_ASSETS = {"ZPDJ.DE","EXV1.DE","IBEXA.MC","DFEN.DE","WTIC.DE",
+                "XLE","XLI","XME","ITA","COPX","LIT",
+                "GOOGL","AVGO","TDG","PANW","CRWD","VST","RCL"}
+TIER2_ASSETS = {"IS0E.DE","SLVR.DE","VVSM.DE","WTIF.DE","EMXC.DE",
+                "XLK","XBI","MSFT","NOW","NOC","AEM","SMCI",
+                "BKNG","AXON","NLR","SLX","UBER","KRW.PA"}
 
 # ════════════════════════════════════════════════════════════════════
 # PARÁMETROS — mínimos, con lógica económica clara
@@ -320,11 +198,11 @@ BREAKOUT_VOL_PERCENTILE = 65   # volumen confirmado sin exigir top 25%
 # 2. A 1.0R de HIGH: trailing peak - 2.0×ATR (espacio para respirar)  
 # 3. A 2.0R de HIGH: trailing peak - 1.5×ATR (más ajustado)
 # 4. A 3.0R de HIGH: trailing peak - 1.0×ATR (proteger ganancias grandes)
-TP_R_MULTIPLE       = 3.5   # TP a 3.5R — más alcanzable, mejora WR y PF
+TP_R_MULTIPLE       = 5.0   # TP amplio — trailing gestiona la salida real
 SL_BUFFER_PCT       = 0.5   # buffer en el SL estructural
-MAX_HOLD_DAYS       = 25    # momentum muere rápido — liberar capital para mejores ops
+MAX_HOLD_DAYS       = 40    # momentum necesita tiempo para desarrollarse
 BREAKEVEN_AT_R      = 1.0   # break-even cuando HIGH supera 1R
-EXIT_NO_PROGRESS_DAYS = 15  # si en 15 días no llega a 1R → salir (trade zombi)
+# EXIT_NO_PROGRESS eliminado — cerraba trades buenos prematuramente
 
 # Trailing dual: % del pico Y % de ganancia protegida (el mayor de los dos)
 # SL = max(peak × (1 - TRAIL_PCT), entry + TRAIL_GAIN × ganancia_actual)
@@ -336,14 +214,14 @@ TRAIL_ACT_2_R       = 2.0   # activar fase 2 cuando HIGH alcanza 2R
 TRAIL_ACT_3_R       = 3.0   # activar fase 3 cuando HIGH alcanza 3R
 
 # % del pico (suelo del SL)
-TRAIL_PCT_1         = 0.04  # fase 1: SL no baja de peak × 0.96
-TRAIL_PCT_2         = 0.03  # fase 2: SL no baja de peak × 0.97
-TRAIL_PCT_3         = 0.015 # fase 3: SL no baja de peak × 0.985
+TRAIL_PCT_1         = 0.05  # fase 1: SL no baja de peak × 0.95
+TRAIL_PCT_2         = 0.035 # fase 2: SL no baja de peak × 0.965
+TRAIL_PCT_3         = 0.02  # fase 3: SL no baja de peak × 0.98
 
 # % de ganancia protegida (techo del SL — garantiza capturar parte del movimiento)
-TRAIL_GAIN_1        = 0.50  # fase 1: capturar al menos 50% de (peak-entry)
-TRAIL_GAIN_2        = 0.65  # fase 2: capturar al menos 65% de (peak-entry)
-TRAIL_GAIN_3        = 0.83  # fase 3: capturar al menos 83% de (peak-entry)
+TRAIL_GAIN_1        = 0.40  # fase 1: capturar al menos 40% de (peak-entry)
+TRAIL_GAIN_2        = 0.55  # fase 2: capturar al menos 55% de (peak-entry)
+TRAIL_GAIN_3        = 0.75  # fase 3: capturar al menos 75% de (peak-entry)
 
 # Costes (backtest)
 COMMISSION_PCT = 0.10
@@ -747,8 +625,6 @@ def backtest(ticker, ind):
                 reason = 'SL'
             elif high_today >= tp:
                 reason = 'TP'
-            elif held >= EXIT_NO_PROGRESS_DAYS and pnl_r_peak < 1.0:
-                reason = 'M⚡'  # momentum muerto — no llegó a 1R en 15 días
             elif held >= MAX_HOLD_DAYS:
                 reason = 'T'
 
@@ -811,7 +687,7 @@ def backtest(ticker, ind):
 
         # Las tres condiciones pasan — calcular niveles
         entry_p, sl_p, tp_p, rr = compute_levels(ind, i, comp_d, ticker)
-        if entry_p is None or rr < 2.0:  # R/R mínimo 2.0 (TP=3.5R)
+        if entry_p is None or rr < 1.5:  # R/R mínimo 1.5
             diag['bad_levels'] += 1
             continue
 
@@ -945,7 +821,11 @@ def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=15.0):
     n_days   = len(dates)
 
     # Capital por posición (fijo en % del capital inicial)
-    pos_capital = initial_capital * position_size_pct / 100.0
+    # Position sizing dinámico: TIER1=20%, TIER2=15%, resto=10%
+    # Se calcula por trade individual usando el ticker
+    # pos_capital es el default (para trades sin ticker info)
+    pos_capital_default = initial_capital * position_size_pct / 100.0
+    pos_capital = pos_capital_default  # se sobreescribe por trade
 
     # ── P&L reconocido en fecha de SALIDA (no distribuido) ──────────
     # Razón: no conoces el resultado hasta cerrar la posición.
@@ -962,7 +842,7 @@ def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=15.0):
     # MTM de cada posición = pos_capital × (pnl_pct × fracción_transcurrida)
 
     # Primero construir índice entrada→salida por trade
-    open_trades = []  # lista de (ei, xi, pnl_pct)
+    open_trades = []  # lista de (ei, xi, pnl_pct, pos_cap)
     for t in trades_s:
         ei = date_idx.get(t['entry_date'])
         xi = date_idx.get(t['exit_date'])
@@ -972,7 +852,15 @@ def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=15.0):
             xi = n_days - 1
         xi = min(xi, n_days - 1)
         pnl_pct = t['pnl'] / 100.0
-        open_trades.append((ei, xi, pnl_pct))
+        # Position sizing dinámico según calidad demostrada del activo
+        tkr = t.get('ticker', '')
+        if tkr in TIER1_ASSETS:
+            t_cap = initial_capital * 0.20
+        elif tkr in TIER2_ASSETS:
+            t_cap = initial_capital * 0.15
+        else:
+            t_cap = initial_capital * 0.10
+        open_trades.append((ei, xi, pnl_pct, t_cap))
 
     # Calcular equity día a día con MTM de posiciones abiertas
     # P&L se reconoce progresivamente (fracción del tiempo transcurrido)
@@ -980,18 +868,17 @@ def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=15.0):
     equity = np.full(n_days, initial_capital)
     for d in range(1, n_days):
         mtm_total = 0.0
-        for (ei, xi, pnl_pct) in open_trades:
+        for (ei, xi, pnl_pct, t_cap) in open_trades:
             if ei >= d:
                 continue   # trade no abierto aún
             if xi < d - 1:
                 # Trade ya cerrado — su P&L ya está incorporado permanentemente
-                mtm_total += pos_capital * pnl_pct
+                mtm_total += t_cap * pnl_pct
             else:
                 # Trade abierto — MTM proporcional al tiempo transcurrido
-                # (aproximación: el precio se mueve linealmente hacia el cierre)
                 frac = (d - ei) / max(xi - ei, 1)
                 frac = min(frac, 1.0)
-                mtm_total += pos_capital * pnl_pct * frac
+                mtm_total += t_cap * pnl_pct * frac
         equity[d] = initial_capital + mtm_total
 
     equity = np.maximum(equity, 1.0)
