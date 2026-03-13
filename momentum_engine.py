@@ -219,7 +219,7 @@ TRAIL_PCT_2         = 0.035 # fase 2: SL no baja de peak × 0.965
 TRAIL_PCT_3         = 0.02  # fase 3: SL no baja de peak × 0.98
 
 # % de ganancia protegida (techo del SL — garantiza capturar parte del movimiento)
-TRAIL_GAIN_1        = 0.40  # fase 1: capturar al menos 40% de (peak-entry)
+TRAIL_GAIN_1        = 0.55  # fase 1: capturar al menos 55% de (peak-entry)
 TRAIL_GAIN_2        = 0.55  # fase 2: capturar al menos 55% de (peak-entry)
 TRAIL_GAIN_3        = 0.75  # fase 3: capturar al menos 75% de (peak-entry)
 
