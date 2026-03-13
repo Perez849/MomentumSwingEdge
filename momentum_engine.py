@@ -201,7 +201,7 @@ BREAKOUT_VOL_PERCENTILE = 65   # volumen confirmado sin exigir top 25%
 TP_R_MULTIPLE       = 5.0   # TP amplio — trailing gestiona la salida real
 SL_BUFFER_PCT       = 0.5   # buffer en el SL estructural
 MAX_HOLD_DAYS       = 40    # momentum necesita tiempo para desarrollarse
-BREAKEVEN_AT_R      = 1.0   # break-even cuando HIGH supera 1R
+BREAKEVEN_AT_R      = 0.6   # break-even cuando HIGH supera 0.6R
 # EXIT_NO_PROGRESS eliminado — cerraba trades buenos prematuramente
 
 # Trailing dual: % del pico Y % de ganancia protegida (el mayor de los dos)
@@ -219,7 +219,7 @@ TRAIL_PCT_2         = 0.035 # fase 2: SL no baja de peak × 0.965
 TRAIL_PCT_3         = 0.02  # fase 3: SL no baja de peak × 0.98
 
 # % de ganancia protegida (techo del SL — garantiza capturar parte del movimiento)
-TRAIL_GAIN_1        = 0.55  # fase 1: capturar al menos 55% de (peak-entry)
+TRAIL_GAIN_1        = 0.40  # fase 1: capturar al menos 40% de (peak-entry)
 TRAIL_GAIN_2        = 0.55  # fase 2: capturar al menos 55% de (peak-entry)
 TRAIL_GAIN_3        = 0.75  # fase 3: capturar al menos 75% de (peak-entry)
 
@@ -604,9 +604,9 @@ def backtest(ticker, ind):
             pnl_r_today = (high_today  - entry_price) / risk
             pnl_r_close = (price       - entry_price) / risk
 
-            # ── BREAK-EVEN: HIGH supera 0.5R ────────────────────────
-            # En cuanto el HIGH del día supera 0.5R, el SL va a BE.
-            # Esto elimina pérdidas en trades que llegaron a ganar.
+            # ── BREAK-EVEN: HIGH supera 0.6R ────────────────────────
+            # En cuanto el HIGH del día supera 0.6R, el SL va a BE.
+            # Esto elimina pérdidas en trades que llegaron a ganar un % decente.
             if pnl_r_today >= BREAKEVEN_AT_R and sl < entry_price:
                 sl = max(sl, entry_price * 1.001)
 
