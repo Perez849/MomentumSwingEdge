@@ -908,8 +908,8 @@ def backtest_mr(ticker, ind, momentum_open_dates=None):
             if e20_j > 0 and lo_j <= e20_j * (1 + PB_TOUCH_BUFFER) and c_j >= e20_j:
                 touch_ema20 = True
             # Toque EMA50: más profundo — solo si EMA50 está ≥ 5% por encima de EMA200
-            if e50_j > 0 and e200_now > 0:
-                ema50_dist = (e50_j - e200_now) / e200_now
+            if e50_j > 0 and ema200_now > 0:
+                ema50_dist = (e50_j - ema200_now) / ema200_now
                 if ema50_dist >= 0.05 and lo_j <= e50_j * (1 + PB_TOUCH_BUFFER) and c_j >= e50_j:
                     touch_ema50 = True
 
