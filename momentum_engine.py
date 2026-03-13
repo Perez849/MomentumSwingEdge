@@ -331,8 +331,8 @@ def compute_indicators(df):
     delta    = c.diff()
     gain     = delta.clip(lower=0)
     loss     = (-delta).clip(lower=0)
-    avg_gain = gain.ewm(span=MR_RSI_PERIOD, adjust=False).mean()
-    avg_loss = loss.ewm(span=MR_RSI_PERIOD, adjust=False).mean()
+    avg_gain = gain.ewm(span=3, adjust=False).mean()  # RSI3 — sensible a movimientos bruscos
+    avg_loss = loss.ewm(span=3, adjust=False).mean()
     rs       = avg_gain / avg_loss.replace(0, np.nan)
     rsi3     = 100 - (100 / (1 + rs))
 
@@ -1132,8 +1132,8 @@ def portfolio_simulate(trades, initial_capital=10000.0, position_size_pct=15.0):
         tkr      = t.get('ticker', '')
         strategy = t.get('strategy', 'MOM')
         if strategy == 'MR':
-            # Mean reversion: sizing fijo 8% — edge menos probado
-            t_cap = initial_capital * MR_POSITION_SIZE
+            # Pullback en tendencia: sizing igual que Tier3 momentum
+            t_cap = initial_capital * PB_POSITION_SIZE
         elif tkr in TIER1_ASSETS:
             t_cap = initial_capital * 0.20
         elif tkr in TIER2_ASSETS:
