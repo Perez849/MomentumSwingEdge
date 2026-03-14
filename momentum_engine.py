@@ -605,21 +605,31 @@ def backtest(ticker, ind):
             pnl_r_close = (price       - entry_price) / risk
 
             # ── BREAK-EVEN: HIGH supera 0.6R ────────────────────────
-            # En cuanto el HIGH del día supera 0.6R, el SL va a BE.
-            # Esto elimina pérdidas en trades que llegaron a ganar un % decente.
             if pnl_r_today >= BREAKEVEN_AT_R and sl < entry_price:
                 sl = max(sl, entry_price * 1.001)
 
-            # ── TRAILING % DEL PICO — tres fases progresivas ────────
-            # SL = peak × (1 - TRAIL_PCT)
-            # Se actualiza cada barra usando el HIGH más alto alcanzado.
-            # Expresado como % del pico: consistente en todos los activos
-            # independientemente de su precio absoluto o ATR.
+            # ── PROFIT LOCK v2.0 — entre BE y fase 1 ─────────────────
+            # PROBLEMA: 31 trades (22%) salen en BE con pico medio +5.1%
+            # porque entre 0.6R (BE) y 1.0R (trailing) no hay nada.
+            # Un trade sube a 0.9R (+6%), no activa trailing, cae → BE → 0%.
             #
-            # Ejemplo con pico $116 (entrada $100, riesgo $8):
-            # Fase 1 (1R): SL = $116 × 0.94 = $109.0 → +9% desde entrada
-            # Fase 2 (2R): SL = $116 × 0.96 = $111.4 → +11.4% desde entrada
-            # Fase 3 (3R): SL = $116 × 0.975 = $113.1 → +13.1% desde entrada
+            # SOLUCIÓN: profit lock parcial que sube el SL gradualmente.
+            # - A 0.7R: proteger 20% de la ganancia → +1.0% en vez de 0%
+            # - A 0.85R: proteger 30% → +1.8% en vez de 0%
+            # Esto NO interfiere con fase 1 (1.0R) porque el max() siempre
+            # toma el valor más alto. Si el trade llega a 1R, fase 1 domina.
+            if pnl_r_peak >= 0.7 and pnl_r_peak < TRAIL_ACT_1_R:
+                gain = peak - entry_price
+                lock = entry_price + 0.20 * gain  # proteger 20%
+                sl = max(sl, lock)
+
+            if pnl_r_peak >= 0.85 and pnl_r_peak < TRAIL_ACT_1_R:
+                gain = peak - entry_price
+                lock = entry_price + 0.30 * gain  # proteger 30%
+                sl = max(sl, lock)
+
+            # ── TRAILING % DEL PICO — fases 1-4 (sin cambios) ────────
+            # Estas fases tienen WR 100% en trades 1R+ → no tocar.
 
             if pnl_r_peak >= TRAIL_ACT_1_R:
                 # SL = máximo entre:
@@ -2064,9 +2074,8 @@ def main():
                   f"no_comp={d['no_comp']} no_bo={d['no_bo']} "
                   f"all3={d['all3']} bad_lvl={d['bad_levels']}")
 
-        # ── ESTRATEGIA COMPLEMENTARIA: desactivada ──────────────────
-        # Pendiente de investigación — solo momentum puro en producción
-        pass
+        # ── ESTRATEGIA COMPLEMENTARIA: ELIMINADA ─────────────────────
+        # Solo momentum puro.
 
         # ── SEÑALES DE HOY ───────────────────────────────────────────────
         sig = get_today_signal(ticker, ind)
