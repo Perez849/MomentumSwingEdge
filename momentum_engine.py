@@ -72,19 +72,49 @@ UNIVERSE = {
     "NDXH.PA":   "Amundi Nasdaq 100 EUR Hedge",         # WR=50%
     "LQQ.PA":    "Amundi Nasdaq 100 2x Lev",            # WR=57% PF=1.09
     "IBCF.DE":   "iShares S&P500 EUR Hedge",            # WR=64% PF=0.96
-    "ZPDE.DE":   "SPDR US Energy ETF",                  # WR=50% PF=1.30
+    # ZPDE.DE eliminado — 5 trades, -11.4% total (usar XLE/XOP en su lugar)
     "ZPDJ.DE":   "SPDR US Industrials ETF",             # WR=86% PF=3.96 ★★
     "EXV1.DE":   "iShares Euro Banks ETF",              # WR=75% PF=5.80 ★★
     "EMXC.DE":   "Amundi EM ex China ETF",              # WR=60% PF=1.87
-    "IBEXA.MC":  "Amundi IBEX 35 2x ETF",              # WR=100% PF=99  ★★
+    # IBEXA.MC eliminado — 6 trades, -13.8% total (apalancado con decay)
     "WTIF.DE":   "WisdomTree Japan EUR Hedge",          # WR=70% PF=2.25 ★
     "DFEN.DE":   "VanEck Defense ETF",                  # WR=60% PF=5.61 ★★
     "WTIC.DE":   "WisdomTree Enhanced Commodity UCITS", # WR=71% PF=3.62 ★★
     "KWBE.DE":   "KraneShares CSI China Internet UCITS",# WR=100%
-    "ENR.DE":    "Siemens Energy",                      # WR=50% PF=1.31
+    # ENR.DE eliminado — 4 trades, WR 25%
     "IUSR.DE":   "iShares US Property Yield UCITS",     # WR=71% IS
-    "VIXL.DE":   "WisdomTree VIX Futures 2.25x UCITS",  # cobertura crash
-    "DXS3.DE":   "Xtrackers S&P500 Inverse Daily Swap", # cobertura bajista
+
+    # ── ANTI-SEQUÍA: ETFs UCITS (Xetra) + acciones clave ────────────
+    # Cubren bear markets, commodities y ciclos desacoplados de US tech
+    "G2X.DE":    "VanEck Gold Miners UCITS ETF",        # ≈GDX en Xetra, oro en crisis
+    "G2XJ.DE":   "VanEck Junior Gold Miners UCITS",     # ≈GDXJ, oro volátil → breakouts
+    "ISPY.DE":   "L&G Cyber Security UCITS ETF",        # ≈CIBR, ciberseguridad Xetra
+    "NDIA.DE":   "iShares MSCI India UCITS ETF",        # ≈INDA, ciclo propio India
+    "IS3S.DE":   "iShares MSCI EM Asia UCITS ETF",      # Asia emergente sin China
+    "DBZB.DE":   "Xtrackers II Global Govt Bond UCITS",  # ≈TLT, bonos gobierno global
+
+    # ── ACCIONES de sectores anti-sequía (comprables desde España) ───
+    # Oro/plata mineras — líderes que suben en crisis
+    "GOLD":      "Barrick Gold Corporation",             # #2 mundial oro
+    "WPM":       "Wheaton Precious Metals",              # streaming oro/plata, menos riesgo
+    "FNV":       "Franco-Nevada Corporation",            # royalties oro, defensivo
+
+    # Defensa — momentum propio en conflictos geopolíticos
+    "LMT":       "Lockheed Martin",                      # defensa #1, subió +40% en 2022
+    "GD":        "General Dynamics",                      # defensa diversificada
+
+    # Energía exploración — más volátil que XLE → más breakouts
+    "OXY":       "Occidental Petroleum",                  # oil exploration, breakouts 2022
+    "DVN":       "Devon Energy",                          # shale, momentum 2021-2022
+    "FANG":      "Diamondback Energy",                    # Permian basin, tendencia propia
+
+    # Utilities/Consumer staples — defensivos en bear markets
+    "NEE":       "NextEra Energy",                        # utility líder, tendencia 2022
+    "PG":        "Procter & Gamble",                      # consumer staples, refugio
+    "KO":        "Coca-Cola Company",                     # defensivo clásico
+
+    # Infraestructura/Uranio
+    "CAT":       "Caterpillar Inc",                       # infra, momentum propio
 
     # ── ETFs SECTORIALES USA ──────────────────────────────────────────
     "XLK":       "SPDR Technology Select Sector",       # WR=67% PF=1.84 ★
@@ -100,7 +130,7 @@ UNIVERSE = {
     "COPX":      "Global X Copper Miners ETF",          # WR=75% PF=4.72 ★★
     "LIT":       "Global X Lithium & Battery Tech ETF", # WR=67% PF=4.05 ★★
     "SLX":       "VanEck Steel ETF",                    # WR=56% PF=1.54
-    "NLR":       "VanEck Uranium & Nuclear ETF",        # WR=57% PF=1.22
+    # NLR eliminado — 7 trades, WR 43%, -9% total (reemplazado por URA)
 
     # ── ACCIONES USA — EDGE DEMOSTRADO ───────────────────────────────
     "NVDA":      "NVIDIA Corporation",                  # momentum histórico
@@ -119,7 +149,7 @@ UNIVERSE = {
     "AEM":       "Agnico Eagle Mines",                  # WR=75% PF=1.46 ★
     "AXON":      "Axon Enterprise",                     # WR=43% PF=1.93
     "VST":       "Vistra Energy",                       # WR=100% PF=99
-    "SMCI":      "Super Micro Computer",                # WR=50% PF=1.66
+    # SMCI eliminado — 2 trades, -9% total (manipulado/volátil)
     "RCL":       "Royal Caribbean",                     # WR=100% PF=99  ★
     "F":         "Ford Motor",                          # WR=100% (2t)
     "BABA":      "Alibaba ADR",                         # WR=100% (1t)
@@ -136,24 +166,28 @@ UNIVERSE = {
 # Activos con historial corto (<5 años) — el sistema los filtrará
 # automáticamente si no tienen suficientes datos para el percentil.
 # Los dejamos en el universo para cuando tengan historia suficiente.
-SHORT_HISTORY = {"SLVR.DE", "VVSM.DE", "SEC0.DE", "DFEN.DE", "ENR.DE",
-                  "KWBE.DE", "CRWD", "UBER", "DXCM", "SAIA"}
+SHORT_HISTORY = {"SLVR.DE", "VVSM.DE", "SEC0.DE", "DFEN.DE",
+                  "KWBE.DE", "CRWD", "UBER", "DXCM", "SAIA",
+                  "ISPY.DE", "NDIA.DE", "IS3S.DE"}
 
 # Activos de volatilidad extrema — SL máximo ajustado al 8% (no 15%)
 # VIXL puede caer 30%+ en un día cuando el VIX colapsa.
 # 3QQQ/3USL/3SEM/3QQS tienen decaimiento temporal y gaps enormes.
-HIGH_VOL_ASSETS = {"VIXL.DE", "DXS3.DE", "LQQ.PA", "IBEXA.MC", "DBPG.DE"}
+HIGH_VOL_ASSETS = {"LQQ.PA", "DBPG.DE", "G2XJ.DE"}
 
 # Position sizing por calidad del activo (basado en PF OOS demostrado)
 # TIER1: PF>3 en OOS → 20% capital  (los mejores generadores de valor)
 # TIER2: PF>1.5      → 15% capital  (edge sólido)
 # TIER3: resto       → 10% capital  (edge marginal o muestra pequeña)
-TIER1_ASSETS = {"ZPDJ.DE","EXV1.DE","IBEXA.MC","DFEN.DE","WTIC.DE",
+TIER1_ASSETS = {"ZPDJ.DE","EXV1.DE","DFEN.DE","WTIC.DE",
                 "XLE","XLI","XME","ITA","COPX","LIT",
-                "GOOGL","AVGO","TDG","PANW","CRWD","VST","RCL"}
+                "GOOGL","AVGO","TDG","PANW","CRWD","VST","RCL",
+                "G2X.DE","LMT"}
 TIER2_ASSETS = {"IS0E.DE","SLVR.DE","VVSM.DE","WTIF.DE","EMXC.DE",
-                "XLK","XBI","MSFT","NOW","NOC","AEM","SMCI",
-                "BKNG","AXON","NLR","SLX","UBER","KRW.PA"}
+                "XLK","XBI","MSFT","NOW","NOC","AEM",
+                "BKNG","AXON","SLX","UBER","KRW.PA",
+                "G2XJ.DE","ISPY.DE","NDIA.DE","GOLD","WPM","FNV",
+                "GD","OXY","DVN","FANG","NEE","CAT"}
 
 # ════════════════════════════════════════════════════════════════════
 # PARÁMETROS — mínimos, con lógica económica clara
@@ -416,9 +450,10 @@ def check_trend(ind, i, ticker=''):
     # Esto elimina entradas en tendencias que ya estan muertas
     # (como comprar momentum alcista en mercado bajista 2022)
     # Activos defensivos/inversos estan exentos
-    defensivos = {"VIXL.DE","DXS3.DE","3QQS.DE","DBPK.DE",
-                  "VZLD.DE","PHAG.DE","IDTL.DE","IBTA.DE",
-                  "XLP","XLU","ZPRS.DE","ZPDV.DE"}
+    defensivos = {"G2X.DE","G2XJ.DE","DBZB.DE",
+                  "PG","KO","NEE",
+                  "PHAG.DE","IDTL.DE","IBTA.DE",
+                  "ZPRS.DE","ZPDV.DE"}
     es_defensivo = ticker in defensivos
     ema200_now   = _v(ind, 'ema200', i)
     above_ema200 = es_defensivo or (price_now > ema200_now and ema200_now > 0)
@@ -608,28 +643,18 @@ def backtest(ticker, ind):
             if pnl_r_today >= BREAKEVEN_AT_R and sl < entry_price:
                 sl = max(sl, entry_price * 1.001)
 
-            # ── PROFIT LOCK v2.0 — entre BE y fase 1 ─────────────────
-            # PROBLEMA: 31 trades (22%) salen en BE con pico medio +5.1%
-            # porque entre 0.6R (BE) y 1.0R (trailing) no hay nada.
-            # Un trade sube a 0.9R (+6%), no activa trailing, cae → BE → 0%.
-            #
-            # SOLUCIÓN: profit lock parcial que sube el SL gradualmente.
-            # - A 0.7R: proteger 20% de la ganancia → +1.0% en vez de 0%
-            # - A 0.85R: proteger 30% → +1.8% en vez de 0%
-            # Esto NO interfiere con fase 1 (1.0R) porque el max() siempre
-            # toma el valor más alto. Si el trade llega a 1R, fase 1 domina.
+            # ── PROFIT LOCK v2.0 — capturar ganancia entre BE y fase 1 ─
+            # 31 trades (22%) salían en BE con pico medio +5.1%.
+            # Profit lock protege 20-30% de la ganancia en ese hueco.
             if pnl_r_peak >= 0.7 and pnl_r_peak < TRAIL_ACT_1_R:
                 gain = peak - entry_price
-                lock = entry_price + 0.20 * gain  # proteger 20%
-                sl = max(sl, lock)
+                sl = max(sl, entry_price + 0.20 * gain)
 
             if pnl_r_peak >= 0.85 and pnl_r_peak < TRAIL_ACT_1_R:
                 gain = peak - entry_price
-                lock = entry_price + 0.30 * gain  # proteger 30%
-                sl = max(sl, lock)
+                sl = max(sl, entry_price + 0.30 * gain)
 
-            # ── TRAILING % DEL PICO — fases 1-4 (sin cambios) ────────
-            # Estas fases tienen WR 100% en trades 1R+ → no tocar.
+            # ── TRAILING % DEL PICO — fases 1-4 (intactas) ──────────
 
             if pnl_r_peak >= TRAIL_ACT_1_R:
                 # SL = máximo entre:
@@ -2075,7 +2100,7 @@ def main():
                   f"all3={d['all3']} bad_lvl={d['bad_levels']}")
 
         # ── ESTRATEGIA COMPLEMENTARIA: ELIMINADA ─────────────────────
-        # Solo momentum puro.
+        # Solo momentum puro con profit lock.
 
         # ── SEÑALES DE HOY ───────────────────────────────────────────────
         sig = get_today_signal(ticker, ind)
