@@ -59,116 +59,95 @@ M="\033[95m"; DIM="\033[90m"; BOLD="\033[1m"; RST="\033[0m"
 
 UNIVERSE = {
     # ══════════════════════════════════════════════════════════════════
-    # UNIVERSO CURADO v2 — solo activos con edge demostrado en OOS
-    # Criterio de inclusión: PF>1.0 en OOS con mínimo 2 trades
-    # Eliminados ~50 activos con PF<1 o 0 trades que diluían el edge
+    # UNIVERSO v3 — limpieza agresiva + activos anti-sequía
+    # ELIMINADOS: IBEXA.MC(-13.8%), ZPDE.DE(-11.4%), NLR(-9%),
+    #   SMCI(-9%), ENR.DE(WR25%), VIXL.DE(0t), DXS3.DE(pierde),
+    #   IBCF.DE(avg+0.3%), XLV(avg+0.6%), DECK(-8.6%), PAAS(-3.9%),
+    #   SEC0.DE(-4.2%), HII(avg+1.3%)
+    # AÑADIDOS: energéticas individuales 2022, oro UCITS, defensa,
+    #   India, ciberseg — todos cubren meses secos
     # ══════════════════════════════════════════════════════════════════
 
-    # ── ETFs EUROPEOS UCITS (Xetra / Euronext) ───────────────────────
-    "IS0E.DE":   "iShares Gold Producers ETF",          # WR=67% PF=1.12
-    "SLVR.DE":   "Global X Silver Miners ETF",          # WR=50% PF=3.76
-    "VVSM.DE":   "VanEck Semiconductor ETF",            # WR=67% PF=13.58 ★
-    "SEC0.DE":   "iShares Semiconductors ETF",          # WR=50% PF=1.40
-    "NDXH.PA":   "Amundi Nasdaq 100 EUR Hedge",         # WR=50%
-    "LQQ.PA":    "Amundi Nasdaq 100 2x Lev",            # WR=57% PF=1.09
-    "IBCF.DE":   "iShares S&P500 EUR Hedge",            # WR=64% PF=0.96
-    # ZPDE.DE eliminado — 5 trades, -11.4% total (usar XLE/XOP en su lugar)
-    "ZPDJ.DE":   "SPDR US Industrials ETF",             # WR=86% PF=3.96 ★★
-    "EXV1.DE":   "iShares Euro Banks ETF",              # WR=75% PF=5.80 ★★
-    "EMXC.DE":   "Amundi EM ex China ETF",              # WR=60% PF=1.87
-    # IBEXA.MC eliminado — 6 trades, -13.8% total (apalancado con decay)
-    "WTIF.DE":   "WisdomTree Japan EUR Hedge",          # WR=70% PF=2.25 ★
-    "DFEN.DE":   "VanEck Defense ETF",                  # WR=60% PF=5.61 ★★
-    "WTIC.DE":   "WisdomTree Enhanced Commodity UCITS", # WR=71% PF=3.62 ★★
-    "KWBE.DE":   "KraneShares CSI China Internet UCITS",# WR=100%
-    # ENR.DE eliminado — 4 trades, WR 25%
-    "IUSR.DE":   "iShares US Property Yield UCITS",     # WR=71% IS
+    # ── ETFs EUROPEOS UCITS (Xetra / Euronext) — PROBADOS ───────────
+    "IS0E.DE":   "iShares Gold Producers ETF",
+    "SLVR.DE":   "Global X Silver Miners ETF",
+    "VVSM.DE":   "VanEck Semiconductor ETF",
+    "LQQ.PA":    "Amundi Nasdaq 100 2x Lev",
+    "ZPDJ.DE":   "SPDR US Industrials ETF",
+    "EXV1.DE":   "iShares Euro Banks ETF",
+    "EMXC.DE":   "Amundi EM ex China ETF",
+    "DFEN.DE":   "VanEck Defense ETF",
+    "WTIC.DE":   "WisdomTree Enhanced Commodity UCITS",
+    "KWBE.DE":   "KraneShares CSI China Internet UCITS",
+    "IUSR.DE":   "iShares US Property Yield UCITS",
+    "NDXH.PA":   "Amundi Nasdaq 100 EUR Hedge",
+    "WTIF.DE":   "WisdomTree Japan EUR Hedge",
 
-    # ── ANTI-SEQUÍA: ETFs UCITS (Xetra) + acciones clave ────────────
-    # Cubren bear markets, commodities y ciclos desacoplados de US tech
-    "G2X.DE":    "VanEck Gold Miners UCITS ETF",        # ≈GDX en Xetra, oro en crisis
-    "G2XJ.DE":   "VanEck Junior Gold Miners UCITS",     # ≈GDXJ, oro volátil → breakouts
-    "ISPY.DE":   "L&G Cyber Security UCITS ETF",        # ≈CIBR, ciberseguridad Xetra
-    "NDIA.DE":   "iShares MSCI India UCITS ETF",        # ≈INDA, ciclo propio India
-    "IS3S.DE":   "iShares MSCI EM Asia UCITS ETF",      # Asia emergente sin China
-    "DBZB.DE":   "Xtrackers II Global Govt Bond UCITS",  # ≈TLT, bonos gobierno global
+    # ── ETFs UCITS ANTI-SEQUÍA (Xetra) ──────────────────────────────
+    "G2X.DE":    "VanEck Gold Miners UCITS ETF",        # ≈GDX, oro en crisis
+    "G2XJ.DE":   "VanEck Junior Gold Miners UCITS",     # ≈GDXJ, breakouts oro
+    "ISPY.DE":   "L&G Cyber Security UCITS ETF",        # ciberseguridad
+    "NDIA.DE":   "iShares MSCI India UCITS ETF",        # ciclo propio India
 
-    # ── ACCIONES de sectores anti-sequía (comprables desde España) ───
-    # Oro/plata mineras — líderes que suben en crisis
-    "GOLD":      "Barrick Gold Corporation",             # #2 mundial oro
-    "WPM":       "Wheaton Precious Metals",              # streaming oro/plata, menos riesgo
-    "FNV":       "Franco-Nevada Corporation",            # royalties oro, defensivo
-
-    # Defensa — momentum propio en conflictos geopolíticos
-    "LMT":       "Lockheed Martin",                      # defensa #1, subió +40% en 2022
-    "GD":        "General Dynamics",                      # defensa diversificada
-
-    # Energía exploración — más volátil que XLE → más breakouts
-    "OXY":       "Occidental Petroleum",                  # oil exploration, breakouts 2022
-    "DVN":       "Devon Energy",                          # shale, momentum 2021-2022
-    "FANG":      "Diamondback Energy",                    # Permian basin, tendencia propia
-
-    # Utilities/Consumer staples — defensivos en bear markets
-    "NEE":       "NextEra Energy",                        # utility líder, tendencia 2022
-    "PG":        "Procter & Gamble",                      # consumer staples, refugio
-    "KO":        "Coca-Cola Company",                     # defensivo clásico
-
-    # Infraestructura/Uranio
-    "CAT":       "Caterpillar Inc",                       # infra, momentum propio
-
-    # ── ETFs SECTORIALES USA ──────────────────────────────────────────
-    "XLK":       "SPDR Technology Select Sector",       # WR=67% PF=1.84 ★
-    "XLE":       "SPDR Energy Select Sector",           # WR=100% PF=99  ★★
-    "XLF":       "SPDR Financial Select Sector",        # WR=67% PF=0.98
-    "XLI":       "SPDR Industrial Select Sector",       # WR=78% PF=11.26 ★★
-    "XLV":       "SPDR Health Care Select Sector",      # WR=50% PF=0.93
-    "XME":       "SPDR S&P Metals & Mining ETF",        # WR=100% PF=99  ★★
-    "SOXX":      "iShares Semiconductor ETF",           # WR=43% PF=1.02
-    "ITA":       "iShares US Aerospace & Defense",      # WR=71% PF=3.28 ★★
-    "IWM":       "iShares Russell 2000 (Small Cap)",    # WR=100% (2t)
-    "XBI":       "SPDR S&P Biotech ETF",                # WR=60% PF=1.23
-    "COPX":      "Global X Copper Miners ETF",          # WR=75% PF=4.72 ★★
-    "LIT":       "Global X Lithium & Battery Tech ETF", # WR=67% PF=4.05 ★★
-    "SLX":       "VanEck Steel ETF",                    # WR=56% PF=1.54
-    # NLR eliminado — 7 trades, WR 43%, -9% total (reemplazado por URA)
+    # ── ETFs SECTORIALES USA — PROBADOS ──────────────────────────────
+    "XLK":       "SPDR Technology Select Sector",
+    "XLE":       "SPDR Energy Select Sector",
+    "XLF":       "SPDR Financial Select Sector",
+    "XLI":       "SPDR Industrial Select Sector",
+    "XME":       "SPDR S&P Metals & Mining ETF",
+    "SOXX":      "iShares Semiconductor ETF",
+    "ITA":       "iShares US Aerospace & Defense",
+    "IWM":       "iShares Russell 2000 (Small Cap)",
+    "XBI":       "SPDR S&P Biotech ETF",
+    "COPX":      "Global X Copper Miners ETF",
+    "LIT":       "Global X Lithium & Battery Tech ETF",
+    "SLX":       "VanEck Steel ETF",
 
     # ── ACCIONES USA — EDGE DEMOSTRADO ───────────────────────────────
-    "NVDA":      "NVIDIA Corporation",                  # momentum histórico
-    "MSFT":      "Microsoft Corporation",               # WR=57% PF=1.64 ★
-    "GOOGL":     "Alphabet (Google)",                   # WR=80% PF=4.52 ★★
-    "AVGO":      "Broadcom Inc",                        # WR=57% PF=2.61 ★
-    "CRWD":      "CrowdStrike Holdings",                # WR=100% PF=99
-    "PANW":      "Palo Alto Networks",                  # WR=100% PF=99  ★
-    "NOW":       "ServiceNow Inc",                      # WR=71% PF=1.49
-    "UBER":      "Uber Technologies",                   # WR=100% (2t)
-    "BKNG":      "Booking Holdings",                    # WR=50% PF=2.00
-    "RTX":       "RTX Corporation (Raytheon)",          # WR=50% PF=1.28
-    "NOC":       "Northrop Grumman",                    # WR=50% PF=3.27
-    "HII":       "Huntington Ingalls Industries",       # WR=40% PF=0.91
-    "TDG":       "TransDigm Group",                     # WR=86% PF=36.58 ★★★
-    "AEM":       "Agnico Eagle Mines",                  # WR=75% PF=1.46 ★
-    "AXON":      "Axon Enterprise",                     # WR=43% PF=1.93
-    "VST":       "Vistra Energy",                       # WR=100% PF=99
-    # SMCI eliminado — 2 trades, -9% total (manipulado/volátil)
-    "RCL":       "Royal Caribbean",                     # WR=100% PF=99  ★
-    "F":         "Ford Motor",                          # WR=100% (2t)
-    "BABA":      "Alibaba ADR",                         # WR=100% (1t)
-    "KRW.PA":    "Amundi MSCI Korea ETF",               # WR=67% PF=1.03
-    "CCJ":       "Cameco (Uranium)",                    # WR=50% PF=1.02
-    "AMZN":      "Amazon.com Inc",                      # WR=40% PF=0.92
-    "DXCM":      "DexCom Inc",                         # WR=100% (1t) ★
-    "SAIA":      "Saia Inc (Transporte)",               # WR=100% (1t)
-    "DECK":      "Deckers Outdoor (HOKA/UGG)",          # WR=50% PF=0.65
-    "NEM":       "Newmont Corporation (Oro)",           # WR=100% (1t)
-    "PAAS":      "Pan American Silver",                 # WR=67% PF=0.86
+    "NVDA":      "NVIDIA Corporation",
+    "MSFT":      "Microsoft Corporation",
+    "GOOGL":     "Alphabet (Google)",
+    "AVGO":      "Broadcom Inc",
+    "CRWD":      "CrowdStrike Holdings",
+    "PANW":      "Palo Alto Networks",
+    "NOW":       "ServiceNow Inc",
+    "BKNG":      "Booking Holdings",
+    "RTX":       "RTX Corporation (Raytheon)",
+    "NOC":       "Northrop Grumman",
+    "TDG":       "TransDigm Group",
+    "AEM":       "Agnico Eagle Mines",
+    "AXON":      "Axon Enterprise",
+    "VST":       "Vistra Energy",
+    "RCL":       "Royal Caribbean",
+    "F":         "Ford Motor",
+    "BABA":      "Alibaba ADR",
+    "KRW.PA":    "Amundi MSCI Korea ETF",
+    "CCJ":       "Cameco (Uranium)",
+    "AMZN":      "Amazon.com Inc",
+    "DXCM":      "DexCom Inc",
+    "SAIA":      "Saia Inc (Transporte)",
+    "NEM":       "Newmont Corporation (Oro)",
+
+    # ── ACCIONES ANTI-SEQUÍA — energía 2022 + oro + defensa ─────────
+    "OXY":       "Occidental Petroleum",                 # #1 S&P500 2022 (+119%)
+    "DVN":       "Devon Energy",                         # shale, +58% en 2022
+    "FANG":      "Diamondback Energy",                   # Permian, +46% en 2022
+    "MPC":       "Marathon Petroleum",                    # refining, +47% en 2022
+    "GOLD":      "Barrick Gold Corporation",             # #2 oro mundial
+    "WPM":       "Wheaton Precious Metals",              # streaming oro/plata
+    "FNV":       "Franco-Nevada Corporation",            # royalties oro
+    "LMT":       "Lockheed Martin",                      # defensa #1, +37% en 2022
+    "GD":        "General Dynamics",                      # defensa, +19% en 2022
+    "CAT":       "Caterpillar Inc",                       # infra/commodities
+    "NEE":       "NextEra Energy",                        # utility líder
 }
 
 # Activos con historial corto (<5 años) — el sistema los filtrará
 # automáticamente si no tienen suficientes datos para el percentil.
 # Los dejamos en el universo para cuando tengan historia suficiente.
-SHORT_HISTORY = {"SLVR.DE", "VVSM.DE", "SEC0.DE", "DFEN.DE",
-                  "KWBE.DE", "CRWD", "UBER", "DXCM", "SAIA",
-                  "ISPY.DE", "NDIA.DE", "IS3S.DE"}
+SHORT_HISTORY = {"SLVR.DE", "VVSM.DE", "DFEN.DE",
+                  "KWBE.DE", "CRWD", "DXCM", "SAIA",
+                  "ISPY.DE", "NDIA.DE"}
 
 # Activos de volatilidad extrema — SL máximo ajustado al 8% (no 15%)
 # VIXL puede caer 30%+ en un día cuando el VIX colapsa.
@@ -182,12 +161,12 @@ HIGH_VOL_ASSETS = {"LQQ.PA", "DBPG.DE", "G2XJ.DE"}
 TIER1_ASSETS = {"ZPDJ.DE","EXV1.DE","DFEN.DE","WTIC.DE",
                 "XLE","XLI","XME","ITA","COPX","LIT",
                 "GOOGL","AVGO","TDG","PANW","CRWD","VST","RCL",
-                "G2X.DE","LMT"}
+                "G2X.DE","LMT","OXY"}
 TIER2_ASSETS = {"IS0E.DE","SLVR.DE","VVSM.DE","WTIF.DE","EMXC.DE",
                 "XLK","XBI","MSFT","NOW","NOC","AEM",
-                "BKNG","AXON","SLX","UBER","KRW.PA",
+                "BKNG","AXON","SLX","KRW.PA",
                 "G2XJ.DE","ISPY.DE","NDIA.DE","GOLD","WPM","FNV",
-                "GD","OXY","DVN","FANG","NEE","CAT"}
+                "GD","DVN","FANG","MPC","NEE","CAT"}
 
 # ════════════════════════════════════════════════════════════════════
 # PARÁMETROS — mínimos, con lógica económica clara
@@ -450,9 +429,8 @@ def check_trend(ind, i, ticker=''):
     # Esto elimina entradas en tendencias que ya estan muertas
     # (como comprar momentum alcista en mercado bajista 2022)
     # Activos defensivos/inversos estan exentos
-    defensivos = {"G2X.DE","G2XJ.DE","DBZB.DE",
-                  "PG","KO","NEE",
-                  "PHAG.DE","IDTL.DE","IBTA.DE",
+    defensivos = {"G2X.DE","G2XJ.DE","GOLD","WPM","FNV",
+                  "NEE","PHAG.DE","IDTL.DE","IBTA.DE",
                   "ZPRS.DE","ZPDV.DE"}
     es_defensivo = ticker in defensivos
     ema200_now   = _v(ind, 'ema200', i)
@@ -643,13 +621,12 @@ def backtest(ticker, ind):
             if pnl_r_today >= BREAKEVEN_AT_R and sl < entry_price:
                 sl = max(sl, entry_price * 1.001)
 
-            # ── PROFIT LOCK v2.0 — capturar ganancia entre BE y fase 1 ─
+            # ── PROFIT LOCK — capturar ganancia entre BE y fase 1 ────
             # 31 trades (22%) salían en BE con pico medio +5.1%.
-            # Profit lock protege 20-30% de la ganancia en ese hueco.
+            # Proteger 20-30% de la ganancia en ese hueco.
             if pnl_r_peak >= 0.7 and pnl_r_peak < TRAIL_ACT_1_R:
                 gain = peak - entry_price
                 sl = max(sl, entry_price + 0.20 * gain)
-
             if pnl_r_peak >= 0.85 and pnl_r_peak < TRAIL_ACT_1_R:
                 gain = peak - entry_price
                 sl = max(sl, entry_price + 0.30 * gain)
