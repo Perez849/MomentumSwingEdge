@@ -144,6 +144,15 @@ UNIVERSE = {
     "HES":       "Hess Corporation",                      # oil exploration +94% en 2022
     "MRO":       "Marathon Oil Corporation",              # oil +97% en 2022
     "AR":        "Antero Resources",                      # gas natural +70% en 2022
+
+    # ── ACCIONES ANTI-SEQUÍA COVID (Mar-Jun 2020) + gaps 2023-2025 ──
+    "SHOP":      "Shopify Inc",                           # +180% en Mar-Sep 2020 (e-commerce)
+    "ZM":        "Zoom Video Communications",             # +400% en Mar-Oct 2020 (stay-at-home)
+    "ENPH":      "Enphase Energy",                        # +500% en Mar-Dec 2020 (solar)
+    "AAPL":      "Apple Inc",                             # recovery 2020 + consistent momentum
+    "META":      "Meta Platforms",                        # recovery momentum, +194% en 2023
+    "NFLX":      "Netflix Inc",                           # stay-at-home 2020 + 2024 rally
+    "PEP":       "PepsiCo Inc",                           # defensivo, tendencia en gaps
 }
 
 # Activos con historial corto (<5 años) — el sistema los filtrará
@@ -166,7 +175,8 @@ HIGH_VOL_MOMENTUM = {"OXY", "DVN", "FANG", "MPC", "MRO", "AR", "HES", "CEG",
                       "XLE", "XME", "COPX", "SLX", "WTIC.DE",
                       "G2X.DE", "G2XJ.DE", "IS0E.DE", "SLVR.DE",
                       "AEM", "NEM", "GOLD", "WPM", "FNV",
-                      "CAT", "LMT", "GD", "NOC"}
+                      "CAT", "LMT", "GD", "NOC",
+                      "ENPH", "SHOP", "ZM"}  # growth volátil con momentum explosivo
 PANIC_VOL_HIGH_MOMENTUM = 92  # percentil 92 para estos (vs 80 para el resto)
 
 # Position sizing por calidad del activo (basado en PF OOS demostrado)
@@ -182,7 +192,8 @@ TIER2_ASSETS = {"IS0E.DE","SLVR.DE","VVSM.DE","WTIF.DE","EMXC.DE",
                 "BKNG","AXON","SLX","KRW.PA",
                 "G2XJ.DE","ISPY.DE","NDIA.DE","GOLD","WPM","FNV",
                 "GD","DVN","FANG","MPC","NEE","CAT",
-                "HES","MRO","AR"}
+                "HES","MRO","AR",
+                "AAPL","META","NFLX","SHOP","ENPH"}
 
 # ════════════════════════════════════════════════════════════════════
 # PARÁMETROS — mínimos, con lógica económica clara
@@ -488,7 +499,7 @@ def check_compression(ind, i, ticker=''):
     if np.isnan(vp):
         return False, {}
 
-    threshold = 55 if ticker in HIGH_VOL_MOMENTUM else COMPRESSION_VOL_PERCENTILE
+    threshold = 70 if ticker in HIGH_VOL_MOMENTUM else COMPRESSION_VOL_PERCENTILE
     compressed = vp <= threshold
 
     # Máximo y mínimo de la ventana de compresión → SL estructural
