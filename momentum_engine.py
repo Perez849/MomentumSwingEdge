@@ -469,18 +469,17 @@ def check_trend(ind, i, ticker=''):
     }
 
 
-def check_compression(ind, i):
+def check_compression(ind, i, ticker=''):
     """
     Condición 2: ¿Está el activo en compresión de volatilidad?
 
-    La volatilidad realizada de los últimos 20 días está en el percentil
-    25 o inferior de su historia de 252 días.
+    Activos normales: percentil ≤ 35 (compresión real).
+    HIGH_VOL_MOMENTUM: percentil ≤ 55 (compresión relativa).
 
-    Esto es universal — funciona igual para oro, uranio y acciones chinas
-    porque cada activo se compara contra sí mismo, no contra un benchmark.
-
-    También detecta el máximo y mínimo de la zona de compresión para
-    calcular el SL estructural.
+    En un rally energético 2022, la volatilidad NUNCA baja a percentil 35
+    porque el activo está en movimiento permanente. Pero SÍ hay pausas
+    donde la vol baja de percentil 90 a 50-55 — esa ES la compresión
+    relativa dentro del rally. Esas pausas preceden la siguiente pata alcista.
     """
     if i < COMPRESSION_BARS + 252:
         return False, {}
@@ -489,7 +488,8 @@ def check_compression(ind, i):
     if np.isnan(vp):
         return False, {}
 
-    compressed = vp <= COMPRESSION_VOL_PERCENTILE
+    threshold = 55 if ticker in HIGH_VOL_MOMENTUM else COMPRESSION_VOL_PERCENTILE
+    compressed = vp <= threshold
 
     # Máximo y mínimo de la ventana de compresión → SL estructural
     comp_start = i - COMPRESSION_BARS
@@ -752,7 +752,7 @@ def backtest(ticker, ind):
             continue
 
         # Condición 2: Compresión
-        comp_ok, comp_d = check_compression(ind, i)
+        comp_ok, comp_d = check_compression(ind, i, ticker)
         if not comp_ok:
             diag['no_comp'] += 1
             continue
@@ -1257,7 +1257,7 @@ def get_today_signal(ticker, ind):
 
     panic = check_panic(ind, i, ticker)
     trend_ok, trend_d = check_trend(ind, i, ticker)
-    comp_ok,  comp_d  = check_compression(ind, i)
+    comp_ok,  comp_d  = check_compression(ind, i, ticker)
     bo_ok,    bo_d    = check_breakout(ind, i)
 
     # Estado del activo
