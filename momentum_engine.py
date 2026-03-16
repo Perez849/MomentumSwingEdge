@@ -401,17 +401,23 @@ def _v(ind, key, i):
 def check_panic(ind, i, ticker=''):
     """
     Filtro de régimen: ¿está el activo en modo pánico?
-    Percentil 80+ = pánico para la mayoría de activos.
-    Percentil 92+ para energéticas/commodities/oro — su volatilidad
-    alta es PARTE del momentum (OXY +119% en 2022 con vol percentil 90+).
+    
+    Activos normales: percentil 80+ = pánico → no operar.
+    Activos HIGH_VOL_MOMENTUM: EXENTOS del filtro de pánico.
+    
+    En 2022, OXY/DVN/FANG tenían volatilidad en percentil 95-100
+    pero subían +100%. Su volatilidad alta ES el momentum.
+    Las 3 condiciones (tendencia+compresión+breakout) ya filtran
+    las entradas malas — el pánico adicional solo bloquea trades buenos.
     """
+    if ticker in HIGH_VOL_MOMENTUM:
+        return False  # EXENTO — las 3 condiciones ya protegen
     if i < 252:
         return False
     vp = ind['vol_pct'][i]
     if np.isnan(vp):
         return False
-    threshold = PANIC_VOL_HIGH_MOMENTUM if ticker in HIGH_VOL_MOMENTUM else PANIC_VOL_PERCENTILE
-    return vp >= threshold
+    return vp >= PANIC_VOL_PERCENTILE
 
 
 def check_trend(ind, i, ticker=''):
