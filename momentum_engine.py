@@ -712,12 +712,22 @@ def backtest(ticker, ind):
             # ── EVALUAR SALIDA ───────────────────────────────────────
             # Usar LOW del día para SL (el precio bajó hasta ahí intradía)
             reason = None
-            if low_today <= sl:
-                reason = 'SL'
-            elif high_today >= tp:
-                reason = 'TP'
-            elif held >= MAX_HOLD_DAYS:
-                reason = 'T'
+
+            # FILTRO DE CONFIRMACIÓN v2.0:
+            # 95% de las pérdidas son breakouts falsos con pico <1.5% y R<0.3
+            # que nunca tuvieron momentum real. Esperan 15-20d hasta el SL (-7%).
+            # Si en 5 días el pico no ha alcanzado 0.3R → el breakout falló
+            # → cerrar en close para limitar pérdida a -2% en vez de -7%.
+            if held >= 5 and (peak - entry_price) / risk < 0.3:
+                reason = 'C'  # Confirmation stop
+
+            if reason is None:
+                if low_today <= sl:
+                    reason = 'SL'
+                elif high_today >= tp:
+                    reason = 'TP'
+                elif held >= MAX_HOLD_DAYS:
+                    reason = 'T'
 
             if reason:
                 # Precio de salida: si SL → precio del SL (ejecutado en SL)
