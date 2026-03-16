@@ -140,6 +140,10 @@ UNIVERSE = {
     "GD":        "General Dynamics",                      # defensa, +19% en 2022
     "CAT":       "Caterpillar Inc",                       # infra/commodities
     "NEE":       "NextEra Energy",                        # utility líder
+    "CEG":       "Constellation Energy",                  # nuclear/energy +109% en 2022
+    "HES":       "Hess Corporation",                      # oil exploration +94% en 2022
+    "MRO":       "Marathon Oil Corporation",              # oil +97% en 2022
+    "AR":        "Antero Resources",                      # gas natural +70% en 2022
 }
 
 # Activos con historial corto (<5 años) — el sistema los filtrará
@@ -154,6 +158,17 @@ SHORT_HISTORY = {"SLVR.DE", "VVSM.DE", "DFEN.DE",
 # 3QQQ/3USL/3SEM/3QQS tienen decaimiento temporal y gaps enormes.
 HIGH_VOL_ASSETS = {"LQQ.PA", "DBPG.DE", "G2XJ.DE"}
 
+# Activos donde la volatilidad alta ES el momentum — no es pánico.
+# En 2022, OXY subió +119% con volatilidad en percentil 90+.
+# El filtro de pánico a 80 las bloqueaba → 10 meses sin trades.
+# Solución: umbral de pánico más alto (92) para estos activos.
+HIGH_VOL_MOMENTUM = {"OXY", "DVN", "FANG", "MPC", "MRO", "AR", "HES", "CEG",
+                      "XLE", "XME", "COPX", "SLX", "WTIC.DE",
+                      "G2X.DE", "G2XJ.DE", "IS0E.DE", "SLVR.DE",
+                      "AEM", "NEM", "GOLD", "WPM", "FNV",
+                      "CAT", "LMT", "GD", "NOC"}
+PANIC_VOL_HIGH_MOMENTUM = 92  # percentil 92 para estos (vs 80 para el resto)
+
 # Position sizing por calidad del activo (basado en PF OOS demostrado)
 # TIER1: PF>3 en OOS → 20% capital  (los mejores generadores de valor)
 # TIER2: PF>1.5      → 15% capital  (edge sólido)
@@ -161,12 +176,13 @@ HIGH_VOL_ASSETS = {"LQQ.PA", "DBPG.DE", "G2XJ.DE"}
 TIER1_ASSETS = {"ZPDJ.DE","EXV1.DE","DFEN.DE","WTIC.DE",
                 "XLE","XLI","XME","ITA","COPX","LIT",
                 "GOOGL","AVGO","TDG","PANW","CRWD","VST","RCL",
-                "G2X.DE","LMT","OXY"}
+                "G2X.DE","LMT","OXY","CEG"}
 TIER2_ASSETS = {"IS0E.DE","SLVR.DE","VVSM.DE","WTIF.DE","EMXC.DE",
                 "XLK","XBI","MSFT","NOW","NOC","AEM",
                 "BKNG","AXON","SLX","KRW.PA",
                 "G2XJ.DE","ISPY.DE","NDIA.DE","GOLD","WPM","FNV",
-                "GD","DVN","FANG","MPC","NEE","CAT"}
+                "GD","DVN","FANG","MPC","NEE","CAT",
+                "HES","MRO","AR"}
 
 # ════════════════════════════════════════════════════════════════════
 # PARÁMETROS — mínimos, con lógica económica clara
@@ -382,18 +398,20 @@ def _v(ind, key, i):
 # TRES CONDICIONES — BINARIAS, SIN PUNTOS
 # ════════════════════════════════════════════════════════════════════
 
-def check_panic(ind, i):
+def check_panic(ind, i, ticker=''):
     """
     Filtro de régimen: ¿está el activo en modo pánico?
-    Si la volatilidad realizada está en el percentil 80+ de su historia
-    el activo está en régimen de riesgo elevado. No operar.
+    Percentil 80+ = pánico para la mayoría de activos.
+    Percentil 92+ para energéticas/commodities/oro — su volatilidad
+    alta es PARTE del momentum (OXY +119% en 2022 con vol percentil 90+).
     """
     if i < 252:
-        return False  # sin historia suficiente, asumir no-pánico
+        return False
     vp = ind['vol_pct'][i]
     if np.isnan(vp):
         return False
-    return vp >= PANIC_VOL_PERCENTILE
+    threshold = PANIC_VOL_HIGH_MOMENTUM if ticker in HIGH_VOL_MOMENTUM else PANIC_VOL_PERCENTILE
+    return vp >= threshold
 
 
 def check_trend(ind, i, ticker=''):
@@ -717,7 +735,7 @@ def backtest(ticker, ind):
         # ── Evaluar nueva entrada ────────────────────────────────────
 
         # Filtro de pánico — si el activo está en modo pánico, ignorar
-        if check_panic(ind, i):
+        if check_panic(ind, i, ticker):
             diag['panic'] += 1
             continue
 
@@ -1231,7 +1249,7 @@ def get_today_signal(ticker, ind):
     if price <= 0:
         return None
 
-    panic = check_panic(ind, i)
+    panic = check_panic(ind, i, ticker)
     trend_ok, trend_d = check_trend(ind, i, ticker)
     comp_ok,  comp_d  = check_compression(ind, i)
     bo_ok,    bo_d    = check_breakout(ind, i)
