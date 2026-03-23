@@ -1,4 +1,5 @@
 yfinance
 pandas
 numpy
+scikit-learn
 lightgbm>=4.0.0
