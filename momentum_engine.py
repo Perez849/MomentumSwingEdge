@@ -78,8 +78,8 @@ UNIVERSE = {
     "WTIF.DE":   "WisdomTree Japan EUR Hedge",
     "G2X.DE":    "VanEck Gold Miners UCITS ETF",
     "G2XJ.DE":   "VanEck Junior Gold Miners UCITS",
-    "ISPY.DE":   "L&G Cyber Security UCITS ETF",
-    "NDIA.DE":   "iShares MSCI India UCITS ETF",
+    # ISPY.DE: delisted
+    # NDIA.DE: delisted
 
     # ── ETFs SECTORIALES USA ──────────────────────────────────────
     "XLK":       "SPDR Technology Select Sector",
@@ -133,8 +133,8 @@ UNIVERSE = {
     "CAT":       "Caterpillar Inc",
     "NEE":       "NextEra Energy",
     "CEG":       "Constellation Energy",
-    "HES":       "Hess Corporation",
-    "MRO":       "Marathon Oil Corporation",
+    # HES: delisted/absorbido por Chevron 2024
+    # MRO: delisted/absorbido por ConocoPhillips 2024
     "AR":        "Antero Resources",
 
     # ── ANTI-SEQUÍA COVID + gaps 2023-2025 ───────────────────────
@@ -183,17 +183,17 @@ TIER2_ASSETS = {
 # PARÁMETROS
 # ════════════════════════════════════════════════════════════════════
 
-COMPRESSION_BARS          = 10
+COMPRESSION_BARS          = 15   # era 10 — más contexto, menos ruido
 TREND_BARS                = 60
 TREND_ATR_MULTIPLE        = 1.5
 TREND_EMA                 = 50
 COMPRESSION_VOL_PERCENTILE = 35
 PANIC_VOL_PERCENTILE      = 80
-BREAKOUT_VOL_PERCENTILE   = 65
+BREAKOUT_VOL_PERCENTILE   = 60   # era 65 — ligeramente más permisivo
 
 TP_R_MULTIPLE      = 5.0
 SL_BUFFER_PCT      = 0.5
-MAX_HOLD_DAYS      = 40
+MAX_HOLD_DAYS      = 55          # era 40 — tendencias fuertes necesitan tiempo
 BREAKEVEN_AT_R     = 0.6
 
 TRAIL_ACT_1_R  = 1.0;  TRAIL_ACT_2_R  = 2.0;  TRAIL_ACT_3_R  = 3.0
@@ -203,6 +203,10 @@ TRAIL_GAIN_1   = 0.40;  TRAIL_GAIN_2   = 0.55;  TRAIL_GAIN_3   = 0.75
 COMMISSION_PCT = 0.10
 SLIPPAGE_PCT   = 0.05
 IS_RATIO       = 0.65
+
+# Confirmation stop — era 5d/0.3R, demasiado agresivo
+CONF_STOP_DAYS  = 7    # días antes de evaluar confirmación
+CONF_STOP_MIN_R = 0.20 # R mínimo alcanzado para no cerrar
 
 # Pullback
 PB_EMA_FAST       = 20;    PB_EMA_MID      = 50
@@ -411,7 +415,7 @@ def compute_levels(ind, i, comp_detail, ticker=""):
 
     atr_entry  = float(ind['atr14'][i]) if 'atr14' in ind else 0
     risk_pct   = (entry - sl) / entry
-    max_sl_pct = 0.12 if ticker in HIGH_VOL_ASSETS else 0.10
+    max_sl_pct = 0.14 if ticker in TIER1_ASSETS else (0.12 if ticker in HIGH_VOL_ASSETS else 0.10)
 
     if risk_pct > max_sl_pct:
         return None, None, None, None
@@ -506,7 +510,7 @@ def backtest(ticker, ind, ml_filter=None, record_features=False):
             peak = max(peak, high_today)
 
             reason = None
-            if held >= 5 and (peak - entry_price) / risk < 0.3:
+            if held >= CONF_STOP_DAYS and (peak - entry_price) / risk < CONF_STOP_MIN_R:
                 reason = 'C'
             if reason is None:
                 if low_today  <= sl:  reason = 'SL'
