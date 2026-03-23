@@ -32,7 +32,7 @@ except ImportError:
 
 # ── Parámetros del filtro ─────────────────────────────────────────
 MIN_TRAIN_SAMPLES  = 60     # mínimo trades IS para entrenar
-MIN_POSITIVE_RATE  = 0.15   # mínimo % de trades buenos en IS
+MIN_POSITIVE_RATE  = 0.20   # mínimo % de trades buenos en IS
 GOOD_TRADE_MIN_R   = 1.0    # pico >= 1R para ser "bueno"
 GOOD_TRADE_MIN_PNL = 0.0    # y cerró positivo
 
@@ -224,42 +224,59 @@ class MLSetupFilter:
         self.trained = True
         return self
 
-    def _calibrate_threshold(self, X, y, trades, n_steps=25) -> float:
-        probas = self.model.predict_proba(X)[:, 1]
-        pnls   = np.array([t.get('pnl', 0.0) or 0.0 for t in trades])
-        n      = len(trades)
+    def _calibrate_threshold(self, X, y, trades, n_steps=20) -> float:
+        """
+        Cross-validation 3-fold para evitar overfitting IS.
+        Rango 0.42-0.56. Minimo 50% trades deben pasar.
+        """
+        from sklearn.model_selection import StratifiedKFold
+        pnls = np.array([t.get('pnl', 0.0) or 0.0 for t in trades])
 
+        skf        = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
         best_score = -np.inf
-        best_thr   = 0.42
+        best_thr   = 0.45
 
-        for thr in np.linspace(0.33, 0.72, n_steps):
-            mask  = probas >= thr
-            n_sel = int(mask.sum())
+        for thr in np.linspace(0.42, 0.56, n_steps):
+            fold_scores = []
+            for train_idx, val_idx in skf.split(X, y):
+                X_tr, X_val = X[train_idx], X[val_idx]
+                y_tr        = y[train_idx]
+                pnls_val    = pnls[val_idx]
 
-            # Necesitamos al menos 25% de los trades para que sea robusto
-            if n_sel < max(25, int(n * 0.25)):
-                continue
+                m_fold = LGBMClassifier(
+                    n_estimators=200, learning_rate=0.05, max_depth=4,
+                    num_leaves=15, min_child_samples=10, subsample=0.8,
+                    colsample_bytree=0.8, class_weight='balanced',
+                    random_state=42, verbose=-1,
+                )
+                m_fold.fit(X_tr, y_tr)
+                probas_val = m_fold.predict_proba(X_val)[:, 1]
 
-            sel   = pnls[mask]
-            wins  = sel[sel > 0]
-            loss  = sel[sel <= 0]
+                mask  = probas_val >= thr
+                n_sel = int(mask.sum())
 
-            if len(loss) == 0 or len(wins) == 0:
-                continue
+                if n_sel < max(10, int(len(val_idx) * 0.50)):
+                    fold_scores.append(-1.0)
+                    continue
 
-            pf    = abs(wins.sum() / loss.sum())
-            wr    = len(wins) / n_sel
-            # Score: PF × WR penalizado si filtramos demasiado
-            keep_ratio = n_sel / n
-            score = pf * wr * (0.5 + 0.5 * keep_ratio)
+                sel  = pnls_val[mask]
+                wins = sel[sel > 0]
+                loss = sel[sel <= 0]
+                if len(loss) == 0 or len(wins) == 0:
+                    fold_scores.append(0.0)
+                    continue
 
+                pf = abs(wins.sum() / loss.sum())
+                wr = len(wins) / n_sel
+                fold_scores.append(pf * wr)
+
+            score = float(np.mean(fold_scores))
             if score > best_score:
                 best_score = score
                 best_thr   = thr
 
         return float(best_thr)
 
-    # ── Inferencia ────────────────────────────────────────────────
 
     def score(self, setup: dict) -> float:
         if not self.trained or self.model is None:
